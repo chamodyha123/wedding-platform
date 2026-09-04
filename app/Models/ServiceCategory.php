@@ -10,6 +10,9 @@ class ServiceCategory extends Model
 {
     use HasFactory;
 
+    /**
+     * Mass assignable attributes.
+     */
     protected $fillable = [
         'name',
         'slug',
@@ -17,17 +20,24 @@ class ServiceCategory extends Model
         'is_active',
     ];
 
+    /**
+     * Attribute casts.
+     */
     protected function casts(): array
     {
         return [
             'is_active' => 'boolean',
         ];
     }
+
+    /**
+     * Providers belonging to this category.
+     */
     public function providers(): BelongsToMany
-{
-    return $this->belongsToMany(
-        ServiceProvider::class,
-        'provider_categories'
-    );
-}
+    {
+        return $this->belongsToMany(
+            ServiceProvider::class,
+            'provider_categories'
+        );
+    }
 }

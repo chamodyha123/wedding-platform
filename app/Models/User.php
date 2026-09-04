@@ -5,16 +5,19 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class User extends Authenticatable
 {
-    use HasApiTokens, HasFactory, Notifiable, HasRoles;
+    use HasApiTokens;
+    use HasFactory;
+    use Notifiable;
+    use HasRoles;
 
     /**
-     * The attributes that are mass assignable.
+     * Mass assignable attributes.
      */
     protected $fillable = [
         'name',
@@ -23,7 +26,7 @@ class User extends Authenticatable
     ];
 
     /**
-     * The attributes that should be hidden for serialization.
+     * Hidden attributes.
      */
     protected $hidden = [
         'password',
@@ -31,17 +34,24 @@ class User extends Authenticatable
     ];
 
     /**
-     * The attributes that should be cast.
+     * Attribute casts.
      */
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
+
             'password' => 'hashed',
         ];
     }
+
+    /**
+     * Service provider profile.
+     */
     public function serviceProvider(): HasOne
-{
-    return $this->hasOne(ServiceProvider::class);
-}
+    {
+        return $this->hasOne(
+            ServiceProvider::class
+        );
+    }
 }

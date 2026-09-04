@@ -2,26 +2,134 @@
 
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ServiceProviderController;
-use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\Admin\ProviderVerificationController;
+use Illuminate\Support\Facades\Route;
+
+
+/*
+|--------------------------------------------------------------------------
+| Authentication Routes
+|--------------------------------------------------------------------------
+*/
 
 Route::prefix('auth')->group(function () {
 
-    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/register', [
+        AuthController::class,
+        'register'
+    ]);
 
-    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/login', [
+        AuthController::class,
+        'login'
+    ]);
 
     Route::middleware('auth:sanctum')->group(function () {
-        Route::get('/me', [AuthController::class, 'me']);
-        Route::post('/logout', [AuthController::class, 'logout']);
+
+        Route::get('/me', [
+            AuthController::class,
+            'me'
+        ]);
+
+        Route::post('/logout', [
+            AuthController::class,
+            'logout'
+        ]);
     });
 });
 
-Route::middleware('auth:sanctum')->prefix('provider')->group(function () {
-    Route::post('/profile', [ServiceProviderController::class, 'store']);
-    Route::get('/profile', [ServiceProviderController::class, 'show']);
-});
-Route::middleware(['auth:sanctum', 'role:admin'])
+
+/*
+|--------------------------------------------------------------------------
+| Service Provider Routes
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware([
+    'auth:sanctum',
+    'role:service_provider'
+])
+    ->prefix('provider')
+    ->group(function () {
+
+        /*
+        |--------------------------------------------------------------------------
+        | Create Business Profile
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post('/profile', [
+            ServiceProviderController::class,
+            'store'
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | View Business Profile
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get('/profile', [
+            ServiceProviderController::class,
+            'show'
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Update Business Profile
+        |--------------------------------------------------------------------------
+        */
+
+        Route::put('/profile', [
+            ServiceProviderController::class,
+            'update'
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | View Provider Categories
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get('/categories', [
+            ServiceProviderController::class,
+            'categories'
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Update Provider Categories
+        |--------------------------------------------------------------------------
+        */
+
+        Route::put('/categories', [
+            ServiceProviderController::class,
+            'updateCategories'
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Provider Dashboard
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get('/dashboard', [
+            ServiceProviderController::class,
+            'dashboard'
+        ]);
+    });
+
+
+/*
+|--------------------------------------------------------------------------
+| Admin Provider Verification Routes
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware([
+    'auth:sanctum',
+    'role:admin'
+])
     ->prefix('admin/providers')
     ->group(function () {
 
