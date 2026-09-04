@@ -4,10 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class ServiceCategory extends Model
+class Service extends Model
 {
     use HasFactory;
 
@@ -15,10 +14,13 @@ class ServiceCategory extends Model
      * Mass assignable attributes.
      */
     protected $fillable = [
+        'service_provider_id',
+        'service_category_id',
         'name',
         'slug',
         'description',
-        'is_active',
+        'status',
+        'is_featured',
     ];
 
     /**
@@ -27,28 +29,28 @@ class ServiceCategory extends Model
     protected function casts(): array
     {
         return [
-            'is_active' => 'boolean',
+            'is_featured' => 'boolean',
         ];
     }
 
     /**
-     * Providers belonging to this category.
+     * Provider that owns this service.
      */
-    public function providers(): BelongsToMany
+    public function provider(): BelongsTo
     {
-        return $this->belongsToMany(
+        return $this->belongsTo(
             ServiceProvider::class,
-            'provider_categories'
+            'service_provider_id'
         );
     }
 
     /**
-     * Services belonging to this category.
+     * Category this service belongs to.
      */
-    public function services(): HasMany
+    public function category(): BelongsTo
     {
-        return $this->hasMany(
-            Service::class,
+        return $this->belongsTo(
+            ServiceCategory::class,
             'service_category_id'
         );
     }

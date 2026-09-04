@@ -1,8 +1,9 @@
 <?php
 
-use App\Http\Controllers\Api\AuthController;
-use App\Http\Controllers\Api\ServiceProviderController;
 use App\Http\Controllers\Api\Admin\ProviderVerificationController;
+use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ServiceController;
+use App\Http\Controllers\Api\ServiceProviderController;
 use Illuminate\Support\Facades\Route;
 
 
@@ -54,7 +55,7 @@ Route::middleware([
 
         /*
         |--------------------------------------------------------------------------
-        | Create Business Profile
+        | Provider Business Profile
         |--------------------------------------------------------------------------
         */
 
@@ -63,22 +64,10 @@ Route::middleware([
             'store'
         ]);
 
-        /*
-        |--------------------------------------------------------------------------
-        | View Business Profile
-        |--------------------------------------------------------------------------
-        */
-
         Route::get('/profile', [
             ServiceProviderController::class,
             'show'
         ]);
-
-        /*
-        |--------------------------------------------------------------------------
-        | Update Business Profile
-        |--------------------------------------------------------------------------
-        */
 
         Route::put('/profile', [
             ServiceProviderController::class,
@@ -87,7 +76,7 @@ Route::middleware([
 
         /*
         |--------------------------------------------------------------------------
-        | View Provider Categories
+        | Provider Categories
         |--------------------------------------------------------------------------
         */
 
@@ -95,12 +84,6 @@ Route::middleware([
             ServiceProviderController::class,
             'categories'
         ]);
-
-        /*
-        |--------------------------------------------------------------------------
-        | Update Provider Categories
-        |--------------------------------------------------------------------------
-        */
 
         Route::put('/categories', [
             ServiceProviderController::class,
@@ -116,6 +99,17 @@ Route::middleware([
         Route::get('/dashboard', [
             ServiceProviderController::class,
             'dashboard'
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Provider Services
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post('/services', [
+            ServiceController::class,
+            'store'
         ]);
     });
 

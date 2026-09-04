@@ -105,4 +105,15 @@ class ServiceProvider extends Model
             'provider_categories'
         );
     }
+
+    /**
+     * Services created by this provider.
+     */
+    public function services(): HasMany
+    {
+        return $this->hasMany(
+            Service::class,
+            'service_provider_id'
+        );
+    }
 }
