@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ServiceProvider extends Model
 {
@@ -48,6 +49,13 @@ class ServiceProvider extends Model
     {
         return $this->belongsTo(User::class);
     }
+    public function verificationHistory(): HasMany
+{
+    return $this->hasMany(
+        ProviderVerificationHistory::class,
+        'service_provider_id'
+    )->latest();
+}
 
     public function verifiedBy(): BelongsTo
     {
