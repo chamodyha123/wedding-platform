@@ -19,13 +19,15 @@ class ServiceProviderController extends Controller
 
         if (!$user->hasRole('service_provider')) {
             return response()->json([
-                'message' => 'Only service provider accounts can create a business profile.',
+                'message' =>
+                    'Only service provider accounts can create a business profile.',
             ], 403);
         }
 
         if ($user->serviceProvider()->exists()) {
             return response()->json([
-                'message' => 'You already have a service provider profile.',
+                'message' =>
+                    'You already have a service provider profile.',
             ], 409);
         }
 
@@ -111,31 +113,43 @@ class ServiceProviderController extends Controller
         $provider = ServiceProvider::create([
             'user_id' => $user->id,
 
-            'business_name' => $validated['business_name'],
+            'business_name' =>
+                $validated['business_name'],
 
-            'business_slug' => $this->generateUniqueSlug(
-                $validated['business_name']
-            ),
+            'business_slug' =>
+                $this->generateUniqueSlug(
+                    $validated['business_name']
+                ),
 
-            'description' => $validated['description'] ?? null,
+            'description' =>
+                $validated['description'] ?? null,
 
-            'phone' => $validated['phone'] ?? null,
+            'phone' =>
+                $validated['phone'] ?? null,
 
-            'whatsapp' => $validated['whatsapp'] ?? null,
+            'whatsapp' =>
+                $validated['whatsapp'] ?? null,
 
-            'email' => $validated['email'] ?? null,
+            'email' =>
+                $validated['email'] ?? null,
 
-            'website' => $validated['website'] ?? null,
+            'website' =>
+                $validated['website'] ?? null,
 
-            'address' => $validated['address'] ?? null,
+            'address' =>
+                $validated['address'] ?? null,
 
-            'city' => $validated['city'] ?? null,
+            'city' =>
+                $validated['city'] ?? null,
 
-            'district' => $validated['district'] ?? null,
+            'district' =>
+                $validated['district'] ?? null,
 
-            'latitude' => $validated['latitude'] ?? null,
+            'latitude' =>
+                $validated['latitude'] ?? null,
 
-            'longitude' => $validated['longitude'] ?? null,
+            'longitude' =>
+                $validated['longitude'] ?? null,
 
             'verification_status' => 'pending',
 
@@ -150,7 +164,8 @@ class ServiceProviderController extends Controller
             'message' =>
                 'Business profile created successfully. Your profile is pending verification.',
 
-            'provider' => $provider->load('categories'),
+            'provider' =>
+                $provider->load('categories'),
         ], 201);
     }
 
@@ -174,7 +189,8 @@ class ServiceProviderController extends Controller
 
         if (!$provider) {
             return response()->json([
-                'message' => 'Business profile not found.',
+                'message' =>
+                    'Business profile not found.',
             ], 404);
         }
 
@@ -197,7 +213,8 @@ class ServiceProviderController extends Controller
             ], 403);
         }
 
-        $provider = $user->serviceProvider()->first();
+        $provider =
+            $user->serviceProvider()->first();
 
         if (!$provider) {
             return response()->json([
@@ -286,7 +303,8 @@ class ServiceProviderController extends Controller
 
         if (
             isset($validated['business_name']) &&
-            $validated['business_name'] !== $provider->business_name
+            $validated['business_name'] !==
+                $provider->business_name
         ) {
             $provider->business_slug =
                 $this->generateUniqueSlug(
@@ -300,9 +318,11 @@ class ServiceProviderController extends Controller
         $provider->save();
 
         return response()->json([
-            'message' => 'Business profile updated successfully.',
+            'message' =>
+                'Business profile updated successfully.',
 
-            'provider' => $provider->load('categories'),
+            'provider' =>
+                $provider->load('categories'),
         ]);
     }
 
@@ -334,15 +354,17 @@ class ServiceProviderController extends Controller
         }
 
         return response()->json([
-            'categories' => $provider->categories,
+            'categories' =>
+                $provider->categories,
         ]);
     }
 
     /**
      * Update the authenticated provider's selected categories.
      */
-    public function updateCategories(Request $request): JsonResponse
-    {
+    public function updateCategories(
+        Request $request
+    ): JsonResponse {
         $user = $request->user();
 
         if (!$user->hasRole('service_provider')) {
@@ -352,7 +374,8 @@ class ServiceProviderController extends Controller
             ], 403);
         }
 
-        $provider = $user->serviceProvider()->first();
+        $provider =
+            $user->serviceProvider()->first();
 
         if (!$provider) {
             return response()->json([
@@ -397,8 +420,9 @@ class ServiceProviderController extends Controller
     /**
      * Get the authenticated service provider dashboard.
      */
-    public function dashboard(Request $request): JsonResponse
-    {
+    public function dashboard(
+        Request $request
+    ): JsonResponse {
         $user = $request->user();
 
         if (!$user->hasRole('service_provider')) {
@@ -408,10 +432,16 @@ class ServiceProviderController extends Controller
             ], 403);
         }
 
+        /*
+         * Load categories and also calculate
+         * the number of services belonging
+         * to this provider.
+         */
         $provider = $user->serviceProvider()
             ->with([
                 'categories:id,name,slug',
             ])
+            ->withCount('services')
             ->first();
 
         if (!$provider) {
@@ -422,46 +452,87 @@ class ServiceProviderController extends Controller
         }
 
         return response()->json([
-            'message' => 'Provider dashboard loaded successfully.',
+            'message' =>
+                'Provider dashboard loaded successfully.',
 
             'dashboard' => [
 
                 'provider' => [
-                    'id' => $provider->id,
-                    'business_name' => $provider->business_name,
-                    'business_slug' => $provider->business_slug,
+                    'id' =>
+                        $provider->id,
+
+                    'business_name' =>
+                        $provider->business_name,
+
+                    'business_slug' =>
+                        $provider->business_slug,
                 ],
 
                 'verification' => [
-                    'status' => $provider->verification_status,
-                    'notes' => $provider->verification_notes,
-                    'verified_at' => $provider->verified_at,
+                    'status' =>
+                        $provider->verification_status,
+
+                    'notes' =>
+                        $provider->verification_notes,
+
+                    'verified_at' =>
+                        $provider->verified_at,
                 ],
 
                 'business' => [
-                    'description' => $provider->description,
-                    'phone' => $provider->phone,
-                    'whatsapp' => $provider->whatsapp,
-                    'email' => $provider->email,
-                    'website' => $provider->website,
-                    'address' => $provider->address,
-                    'city' => $provider->city,
-                    'district' => $provider->district,
-                    'latitude' => $provider->latitude,
-                    'longitude' => $provider->longitude,
-                    'logo' => $provider->logo,
-                    'cover_image' => $provider->cover_image,
-                    'is_active' => $provider->is_active,
+                    'description' =>
+                        $provider->description,
+
+                    'phone' =>
+                        $provider->phone,
+
+                    'whatsapp' =>
+                        $provider->whatsapp,
+
+                    'email' =>
+                        $provider->email,
+
+                    'website' =>
+                        $provider->website,
+
+                    'address' =>
+                        $provider->address,
+
+                    'city' =>
+                        $provider->city,
+
+                    'district' =>
+                        $provider->district,
+
+                    'latitude' =>
+                        $provider->latitude,
+
+                    'longitude' =>
+                        $provider->longitude,
+
+                    'logo' =>
+                        $provider->logo,
+
+                    'cover_image' =>
+                        $provider->cover_image,
+
+                    'is_active' =>
+                        $provider->is_active,
                 ],
 
-                'categories' => $provider->categories,
+                'categories' =>
+                    $provider->categories,
 
                 'statistics' => [
                     'categories_count' =>
                         $provider->categories->count(),
 
-                    'services_count' => 0,
+                    'services_count' =>
+                        $provider->services_count,
 
+                    /*
+                     * These modules do not exist yet.
+                     */
                     'packages_count' => 0,
 
                     'bookings_count' => 0,
@@ -479,7 +550,9 @@ class ServiceProviderController extends Controller
         string $businessName,
         ?int $ignoreProviderId = null
     ): string {
-        $slug = Str::slug($businessName);
+        $slug = Str::slug(
+            $businessName
+        );
 
         if ($slug === '') {
             $slug = 'business';
@@ -490,12 +563,15 @@ class ServiceProviderController extends Controller
         $counter = 1;
 
         while (true) {
-            $query = ServiceProvider::where(
-                'business_slug',
-                $slug
-            );
+            $query =
+                ServiceProvider::where(
+                    'business_slug',
+                    $slug
+                );
 
-            if ($ignoreProviderId !== null) {
+            if (
+                $ignoreProviderId !== null
+            ) {
                 $query->where(
                     'id',
                     '!=',
@@ -507,7 +583,10 @@ class ServiceProviderController extends Controller
                 break;
             }
 
-            $slug = $originalSlug . '-' . $counter;
+            $slug =
+                $originalSlug .
+                '-' .
+                $counter;
 
             $counter++;
         }

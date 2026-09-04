@@ -5,10 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Service extends Model
 {
     use HasFactory;
+    use SoftDeletes;
 
     /**
      * Mass assignable attributes.
@@ -30,6 +32,7 @@ class Service extends Model
     {
         return [
             'is_featured' => 'boolean',
+            'deleted_at' => 'datetime',
         ];
     }
 
