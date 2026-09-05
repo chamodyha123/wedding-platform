@@ -139,10 +139,39 @@ Route::middleware([
         |--------------------------------------------------------------------------
         */
 
+        Route::get('/services/{serviceId}/packages', [
+            ServicePackageController::class,
+            'index'
+        ]);
+
         Route::post('/services/{serviceId}/packages', [
             ServicePackageController::class,
             'store'
         ]);
+
+        Route::get(
+            '/services/{serviceId}/packages/{packageId}',
+            [
+                ServicePackageController::class,
+                'show'
+            ]
+        );
+
+        Route::put(
+            '/services/{serviceId}/packages/{packageId}',
+            [
+                ServicePackageController::class,
+                'update'
+            ]
+        );
+
+        Route::delete(
+            '/services/{serviceId}/packages/{packageId}',
+            [
+                ServicePackageController::class,
+                'destroy'
+            ]
+        );
     });
 
 

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ServicePackage;
 use App\Models\ServiceProvider;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -433,9 +434,8 @@ class ServiceProviderController extends Controller
         }
 
         /*
-         * Load categories and also calculate
-         * the number of services belonging
-         * to this provider.
+         * Load categories and calculate
+         * the provider's service count.
          */
         $provider = $user->serviceProvider()
             ->with([
@@ -450,6 +450,23 @@ class ServiceProviderController extends Controller
                     'Business profile not found. Please create your business profile first.',
             ], 404);
         }
+
+        /*
+         * Count active (non-soft-deleted) packages
+         * belonging to services owned by this provider.
+         *
+         * whereHas('service') ensures packages from
+         * other providers are never included.
+         */
+        $packagesCount = ServicePackage::whereHas(
+            'service',
+            function ($query) use ($provider) {
+                $query->where(
+                    'service_provider_id',
+                    $provider->id
+                );
+            }
+        )->count();
 
         return response()->json([
             'message' =>
@@ -530,11 +547,12 @@ class ServiceProviderController extends Controller
                     'services_count' =>
                         $provider->services_count,
 
+                    'packages_count' =>
+                        $packagesCount,
+
                     /*
                      * These modules do not exist yet.
                      */
-                    'packages_count' => 0,
-
                     'bookings_count' => 0,
 
                     'reviews_count' => 0,
@@ -569,9 +587,7 @@ class ServiceProviderController extends Controller
                     $slug
                 );
 
-            if (
-                $ignoreProviderId !== null
-            ) {
+            if ($ignoreProviderId !== null) {
                 $query->where(
                     'id',
                     '!=',
