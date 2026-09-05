@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Admin\ProviderVerificationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ServiceController;
+use App\Http\Controllers\Api\ServicePackageController;
 use App\Http\Controllers\Api\ServiceProviderController;
 use Illuminate\Support\Facades\Route;
 
@@ -130,6 +131,17 @@ Route::middleware([
         Route::delete('/services/{id}', [
             ServiceController::class,
             'destroy'
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Service Packages
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post('/services/{serviceId}/packages', [
+            ServicePackageController::class,
+            'store'
         ]);
     });
 
