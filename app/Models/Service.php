@@ -69,4 +69,15 @@ class Service extends Model
             'service_id'
         );
     }
+
+    /**
+     * Availability records belonging to this service.
+     */
+    public function availabilities(): HasMany
+    {
+        return $this->hasMany(
+            ServiceAvailability::class,
+            'service_id'
+        );
+    }
 }
