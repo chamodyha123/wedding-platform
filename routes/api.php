@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Admin\ProviderVerificationController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ServiceAvailabilityController;
 use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\ServicePackageController;
 use App\Http\Controllers\Api\ServiceProviderController;
@@ -169,6 +170,44 @@ Route::middleware([
             '/services/{serviceId}/packages/{packageId}',
             [
                 ServicePackageController::class,
+                'destroy'
+            ]
+        );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Service Availability
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get(
+            '/services/{serviceId}/availability',
+            [
+                ServiceAvailabilityController::class,
+                'index'
+            ]
+        );
+
+        Route::post(
+            '/services/{serviceId}/availability',
+            [
+                ServiceAvailabilityController::class,
+                'store'
+            ]
+        );
+
+        Route::put(
+            '/services/{serviceId}/availability/{availabilityId}',
+            [
+                ServiceAvailabilityController::class,
+                'update'
+            ]
+        );
+
+        Route::delete(
+            '/services/{serviceId}/availability/{availabilityId}',
+            [
+                ServiceAvailabilityController::class,
                 'destroy'
             ]
         );
