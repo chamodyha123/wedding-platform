@@ -80,4 +80,15 @@ class Service extends Model
             'service_id'
         );
     }
+
+    /**
+     * Bookings belonging to this service.
+     */
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(
+            Booking::class,
+            'service_id'
+        );
+    }
 }

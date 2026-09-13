@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Admin\ProviderVerificationController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\ServiceAvailabilityController;
 use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\ServicePackageController;
@@ -40,6 +41,36 @@ Route::prefix('auth')->group(function () {
         ]);
     });
 });
+
+
+/*
+|--------------------------------------------------------------------------
+| Customer Routes
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware([
+    'auth:sanctum',
+    'role:customer'
+])
+    ->prefix('customer')
+    ->group(function () {
+
+        Route::get('/bookings', [
+            BookingController::class,
+            'index'
+        ]);
+
+        Route::post('/bookings', [
+            BookingController::class,
+            'store'
+        ]);
+
+        Route::get('/bookings/{id}', [
+            BookingController::class,
+            'show'
+        ]);
+    });
 
 
 /*
@@ -101,6 +132,32 @@ Route::middleware([
         Route::get('/dashboard', [
             ServiceProviderController::class,
             'dashboard'
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Provider Bookings
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get('/bookings', [
+            BookingController::class,
+            'providerIndex'
+        ]);
+
+        Route::get('/bookings/{id}', [
+            BookingController::class,
+            'providerShow'
+        ]);
+
+        Route::post('/bookings/{id}/accept', [
+            BookingController::class,
+            'accept'
+        ]);
+
+        Route::post('/bookings/{id}/reject', [
+            BookingController::class,
+            'reject'
         ]);
 
         /*

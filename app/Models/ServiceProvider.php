@@ -54,17 +54,14 @@ class ServiceProvider extends Model
     {
         return [
             'latitude' => 'decimal:7',
-
             'longitude' => 'decimal:7',
-
             'verified_at' => 'datetime',
-
             'is_active' => 'boolean',
         ];
     }
 
     /**
-     * The user who owns this provider profile.
+     * User who owns this provider profile.
      */
     public function user(): BelongsTo
     {
@@ -85,7 +82,7 @@ class ServiceProvider extends Model
     }
 
     /**
-     * Admin who verified the provider.
+     * Admin who verified this provider.
      */
     public function verifiedBy(): BelongsTo
     {
@@ -113,6 +110,17 @@ class ServiceProvider extends Model
     {
         return $this->hasMany(
             Service::class,
+            'service_provider_id'
+        );
+    }
+
+    /**
+     * Bookings received by this provider.
+     */
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(
+            Booking::class,
             'service_provider_id'
         );
     }

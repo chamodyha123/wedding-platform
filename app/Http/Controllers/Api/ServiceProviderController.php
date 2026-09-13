@@ -328,7 +328,7 @@ class ServiceProviderController extends Controller
     }
 
     /**
-     * Get the authenticated provider's selected categories.
+     * Get provider categories.
      */
     public function categories(Request $request): JsonResponse
     {
@@ -361,7 +361,7 @@ class ServiceProviderController extends Controller
     }
 
     /**
-     * Update the authenticated provider's selected categories.
+     * Update provider categories.
      */
     public function updateCategories(
         Request $request
@@ -419,7 +419,7 @@ class ServiceProviderController extends Controller
     }
 
     /**
-     * Get the authenticated service provider dashboard.
+     * Get authenticated provider dashboard.
      */
     public function dashboard(
         Request $request
@@ -434,14 +434,17 @@ class ServiceProviderController extends Controller
         }
 
         /*
-         * Load categories and calculate
-         * the provider's service count.
+         * Laravel calculates service and booking
+         * counts directly through relationships.
          */
         $provider = $user->serviceProvider()
             ->with([
                 'categories:id,name,slug',
             ])
-            ->withCount('services')
+            ->withCount([
+                'services',
+                'bookings',
+            ])
             ->first();
 
         if (!$provider) {
@@ -452,11 +455,8 @@ class ServiceProviderController extends Controller
         }
 
         /*
-         * Count active (non-soft-deleted) packages
-         * belonging to services owned by this provider.
-         *
-         * whereHas('service') ensures packages from
-         * other providers are never included.
+         * Count non-soft-deleted packages belonging
+         * to this provider's services.
          */
         $packagesCount = ServicePackage::whereHas(
             'service',
@@ -550,11 +550,12 @@ class ServiceProviderController extends Controller
                     'packages_count' =>
                         $packagesCount,
 
-                    /*
-                     * These modules do not exist yet.
-                     */
-                    'bookings_count' => 0,
+                    'bookings_count' =>
+                        $provider->bookings_count,
 
+                    /*
+                     * Reviews are not implemented yet.
+                     */
                     'reviews_count' => 0,
                 ],
             ],
