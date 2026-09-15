@@ -56,6 +56,12 @@ Route::middleware([
     ->prefix('customer')
     ->group(function () {
 
+        /*
+        |--------------------------------------------------------------------------
+        | Customer Bookings
+        |--------------------------------------------------------------------------
+        */
+
         Route::get('/bookings', [
             BookingController::class,
             'index'
@@ -69,6 +75,11 @@ Route::middleware([
         Route::get('/bookings/{id}', [
             BookingController::class,
             'show'
+        ]);
+
+        Route::post('/bookings/{id}/cancel', [
+            BookingController::class,
+            'cancel'
         ]);
     });
 

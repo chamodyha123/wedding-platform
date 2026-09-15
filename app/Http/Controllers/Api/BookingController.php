@@ -96,6 +96,100 @@ class BookingController extends Controller
     }
 
     /**
+     * Cancel a booking belonging to the authenticated customer.
+     */
+    public function cancel(
+        Request $request,
+        int $id
+    ): JsonResponse {
+        $user = $request->user();
+
+        if (!$user->hasRole('customer')) {
+            return response()->json([
+                'message' =>
+                    'Only customer accounts can cancel bookings.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'cancellation_reason' => [
+                'required',
+                'string',
+                'max:2000',
+            ],
+        ]);
+
+        /*
+         * Ownership protection:
+         *
+         * A customer can only find and cancel
+         * their own bookings.
+         */
+        $booking = Booking::query()
+            ->where(
+                'id',
+                $id
+            )
+            ->where(
+                'customer_id',
+                $user->id
+            )
+            ->first();
+
+        if (!$booking) {
+            return response()->json([
+                'message' =>
+                    'Booking not found.',
+            ], 404);
+        }
+
+        /*
+         * Before payment support is implemented,
+         * customers may cancel pending or accepted
+         * bookings.
+         *
+         * Confirmed bookings will later use payment
+         * and refund rules.
+         */
+        if (!in_array(
+            $booking->booking_status,
+            [
+                'pending',
+                'accepted',
+            ],
+            true
+        )) {
+            return response()->json([
+                'message' =>
+                    'Only pending or accepted bookings can be cancelled.',
+            ], 422);
+        }
+
+        $booking->booking_status =
+            'cancelled';
+
+        $booking->cancellation_reason =
+            $validated['cancellation_reason'];
+
+        $booking->cancelled_at =
+            now();
+
+        $booking->save();
+
+        return response()->json([
+            'message' =>
+                'Booking cancelled successfully.',
+
+            'booking' =>
+                $booking->load([
+                    'provider:id,business_name,business_slug',
+                    'service:id,name,slug',
+                    'package:id,name,slug,price,duration_minutes',
+                ]),
+        ]);
+    }
+
+    /**
      * Create a new booking for the authenticated customer.
      */
     public function store(Request $request): JsonResponse
@@ -277,6 +371,9 @@ class BookingController extends Controller
 
         /*
          * Prevent overlapping bookings for this provider.
+         *
+         * Rejected, cancelled, and completed bookings
+         * do not block the provider's schedule.
          */
         $bookingConflictExists = Booking::where(
             'service_provider_id',
@@ -401,7 +498,8 @@ class BookingController extends Controller
             ], 403);
         }
 
-        $provider = $user->serviceProvider()->first();
+        $provider =
+            $user->serviceProvider()->first();
 
         if (!$provider) {
             return response()->json([
@@ -452,7 +550,8 @@ class BookingController extends Controller
             ], 403);
         }
 
-        $provider = $user->serviceProvider()->first();
+        $provider =
+            $user->serviceProvider()->first();
 
         if (!$provider) {
             return response()->json([
@@ -505,7 +604,8 @@ class BookingController extends Controller
             ], 403);
         }
 
-        $provider = $user->serviceProvider()->first();
+        $provider =
+            $user->serviceProvider()->first();
 
         if (!$provider) {
             return response()->json([
@@ -521,7 +621,10 @@ class BookingController extends Controller
             ], 403);
         }
 
-        if ($provider->verification_status !== 'verified') {
+        if (
+            $provider->verification_status !==
+            'verified'
+        ) {
             return response()->json([
                 'message' =>
                     'Your business must be verified before managing bookings.',
@@ -548,7 +651,10 @@ class BookingController extends Controller
         /*
          * Only a pending booking can be accepted.
          */
-        if ($booking->booking_status !== 'pending') {
+        if (
+            $booking->booking_status !==
+            'pending'
+        ) {
             return response()->json([
                 'message' =>
                     'Only pending bookings can be accepted.',
@@ -563,11 +669,18 @@ class BookingController extends Controller
             ],
         ]);
 
-        $booking->booking_status = 'accepted';
+        $booking->booking_status =
+            'accepted';
 
-        $booking->accepted_at = now();
+        $booking->accepted_at =
+            now();
 
-        if (array_key_exists('provider_notes', $validated)) {
+        if (
+            array_key_exists(
+                'provider_notes',
+                $validated
+            )
+        ) {
             $booking->provider_notes =
                 $validated['provider_notes'];
         }
@@ -603,7 +716,8 @@ class BookingController extends Controller
             ], 403);
         }
 
-        $provider = $user->serviceProvider()->first();
+        $provider =
+            $user->serviceProvider()->first();
 
         if (!$provider) {
             return response()->json([
@@ -619,7 +733,10 @@ class BookingController extends Controller
             ], 403);
         }
 
-        if ($provider->verification_status !== 'verified') {
+        if (
+            $provider->verification_status !==
+            'verified'
+        ) {
             return response()->json([
                 'message' =>
                     'Your business must be verified before managing bookings.',
@@ -643,7 +760,10 @@ class BookingController extends Controller
         /*
          * Only pending bookings may be rejected.
          */
-        if ($booking->booking_status !== 'pending') {
+        if (
+            $booking->booking_status !==
+            'pending'
+        ) {
             return response()->json([
                 'message' =>
                     'Only pending bookings can be rejected.',
@@ -658,9 +778,15 @@ class BookingController extends Controller
             ],
         ]);
 
-        $booking->booking_status = 'rejected';
+        $booking->booking_status =
+            'rejected';
 
-        if (array_key_exists('provider_notes', $validated)) {
+        if (
+            array_key_exists(
+                'provider_notes',
+                $validated
+            )
+        ) {
             $booking->provider_notes =
                 $validated['provider_notes'];
         }
@@ -685,7 +811,7 @@ class BookingController extends Controller
      *
      * Example:
      *
-     * BK-20260914-A1B2C3
+     * BK-20260915-A1B2C3
      */
     private function generateBookingReference(): string
     {
