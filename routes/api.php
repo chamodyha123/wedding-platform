@@ -171,6 +171,11 @@ Route::middleware([
             'reject'
         ]);
 
+        Route::post('/bookings/{id}/complete', [
+            BookingController::class,
+            'complete'
+        ]);
+
         /*
         |--------------------------------------------------------------------------
         | Provider Services

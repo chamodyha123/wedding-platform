@@ -82,7 +82,8 @@ class BookingController extends Controller
 
         if (!$booking) {
             return response()->json([
-                'message' => 'Booking not found.',
+                'message' =>
+                    'Booking not found.',
             ], 404);
         }
 
@@ -287,8 +288,8 @@ class BookingController extends Controller
         }
 
         /*
-         * Package must belong to the selected service,
-         * be published, and not be soft deleted.
+         * Package must belong to the selected service
+         * and must be published.
          */
         $package = $service->packages()
             ->where(
@@ -807,11 +808,122 @@ class BookingController extends Controller
     }
 
     /**
+     * Complete a confirmed booking.
+     */
+    public function complete(
+        Request $request,
+        int $id
+    ): JsonResponse {
+        $user = $request->user();
+
+        if (!$user->hasRole('service_provider')) {
+            return response()->json([
+                'message' =>
+                    'Only service provider accounts can complete bookings.',
+            ], 403);
+        }
+
+        $provider =
+            $user->serviceProvider()->first();
+
+        if (!$provider) {
+            return response()->json([
+                'message' =>
+                    'Business profile not found.',
+            ], 404);
+        }
+
+        if (!$provider->is_active) {
+            return response()->json([
+                'message' =>
+                    'Your provider account is inactive and cannot manage bookings.',
+            ], 403);
+        }
+
+        if (
+            $provider->verification_status !==
+            'verified'
+        ) {
+            return response()->json([
+                'message' =>
+                    'Your business must be verified before managing bookings.',
+            ], 403);
+        }
+
+        /*
+         * Ownership protection:
+         *
+         * Provider can only complete bookings
+         * belonging to their own business.
+         */
+        $booking = $provider->bookings()
+            ->where(
+                'id',
+                $id
+            )
+            ->first();
+
+        if (!$booking) {
+            return response()->json([
+                'message' =>
+                    'Booking not found.',
+            ], 404);
+        }
+
+        /*
+         * Payment processing will move an accepted
+         * booking to confirmed.
+         *
+         * Only confirmed bookings may be completed.
+         */
+        if (
+            $booking->booking_status !==
+            'confirmed'
+        ) {
+            return response()->json([
+                'message' =>
+                    'Only confirmed bookings can be completed.',
+            ], 422);
+        }
+
+        /*
+         * Prevent completing a booking before
+         * the scheduled event date.
+         */
+        if ($booking->event_date->isFuture()) {
+            return response()->json([
+                'message' =>
+                    'A booking cannot be completed before its event date.',
+            ], 422);
+        }
+
+        $booking->booking_status =
+            'completed';
+
+        $booking->completed_at =
+            now();
+
+        $booking->save();
+
+        return response()->json([
+            'message' =>
+                'Booking completed successfully.',
+
+            'booking' =>
+                $booking->load([
+                    'customer:id,name,email',
+                    'service:id,name,slug',
+                    'package:id,name,slug,price,duration_minutes',
+                ]),
+        ]);
+    }
+
+    /**
      * Generate a unique booking reference.
      *
      * Example:
      *
-     * BK-20260915-A1B2C3
+     * BK-20260918-A1B2C3
      */
     private function generateBookingReference(): string
     {
