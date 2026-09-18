@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ServicePackage;
 use App\Models\ServiceProvider;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class ServiceProviderController extends Controller
@@ -18,18 +20,10 @@ class ServiceProviderController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can create a business profile.',
+                'message' => 'Only service provider accounts can create a business profile.',
             ], 403);
-        }
-
-        if ($user->serviceProvider()->exists()) {
-            return response()->json([
-                'message' =>
-                    'You already have a service provider profile.',
-            ], 409);
         }
 
         $validated = $request->validate([
@@ -111,62 +105,86 @@ class ServiceProviderController extends Controller
             ],
         ]);
 
-        $provider = ServiceProvider::create([
-            'user_id' => $user->id,
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            try {
+                $provider = DB::transaction(function () use (
+                    $user,
+                    $validated
+                ) {
+                    $user->newQuery()
+                        ->where('id', $user->id)
+                        ->lockForUpdate()
+                        ->first();
 
-            'business_name' =>
-                $validated['business_name'],
+                    if ($user->serviceProvider()->exists()) {
+                        return response()->json([
+                            'message' => 'You already have a service provider profile.',
+                        ], 409);
+                    }
 
-            'business_slug' =>
-                $this->generateUniqueSlug(
-                    $validated['business_name']
-                ),
+                    $provider = ServiceProvider::create([
+                        'user_id' => $user->id,
 
-            'description' =>
-                $validated['description'] ?? null,
+                        'business_name' => $validated['business_name'],
 
-            'phone' =>
-                $validated['phone'] ?? null,
+                        'business_slug' => $this->generateUniqueSlug(
+                            $validated['business_name']
+                        ),
 
-            'whatsapp' =>
-                $validated['whatsapp'] ?? null,
+                        'description' => $validated['description'] ?? null,
 
-            'email' =>
-                $validated['email'] ?? null,
+                        'phone' => $validated['phone'] ?? null,
 
-            'website' =>
-                $validated['website'] ?? null,
+                        'whatsapp' => $validated['whatsapp'] ?? null,
 
-            'address' =>
-                $validated['address'] ?? null,
+                        'email' => $validated['email'] ?? null,
 
-            'city' =>
-                $validated['city'] ?? null,
+                        'website' => $validated['website'] ?? null,
 
-            'district' =>
-                $validated['district'] ?? null,
+                        'address' => $validated['address'] ?? null,
 
-            'latitude' =>
-                $validated['latitude'] ?? null,
+                        'city' => $validated['city'] ?? null,
 
-            'longitude' =>
-                $validated['longitude'] ?? null,
+                        'district' => $validated['district'] ?? null,
 
-            'verification_status' => 'pending',
+                        'latitude' => $validated['latitude'] ?? null,
 
-            'is_active' => true,
-        ]);
+                        'longitude' => $validated['longitude'] ?? null,
 
-        $provider->categories()->sync(
-            $validated['category_ids']
-        );
+                        'verification_status' => 'pending',
+
+                        'is_active' => true,
+                    ]);
+
+                    $provider->categories()->sync(
+                        $validated['category_ids']
+                    );
+
+                    return $provider;
+                });
+
+                break;
+            } catch (QueryException $exception) {
+                if ($exception->getCode() !== '23505' || $attempt === 2) {
+                    if ($exception->getCode() === '23505' && str_contains($exception->getMessage(), 'user_id')) {
+                        return response()->json([
+                            'message' => 'You already have a service provider profile.',
+                        ], 409);
+                    }
+
+                    throw $exception;
+                }
+            }
+        }
+
+        if ($provider instanceof JsonResponse) {
+            return $provider;
+        }
 
         return response()->json([
-            'message' =>
-                'Business profile created successfully. Your profile is pending verification.',
+            'message' => 'Business profile created successfully. Your profile is pending verification.',
 
-            'provider' =>
-                $provider->load('categories'),
+            'provider' => $provider->load('categories'),
         ], 201);
     }
 
@@ -177,10 +195,9 @@ class ServiceProviderController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can access this profile.',
+                'message' => 'Only service provider accounts can access this profile.',
             ], 403);
         }
 
@@ -188,10 +205,9 @@ class ServiceProviderController extends Controller
             ->with('categories')
             ->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found.',
+                'message' => 'Business profile not found.',
             ], 404);
         }
 
@@ -207,20 +223,18 @@ class ServiceProviderController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can update a business profile.',
+                'message' => 'Only service provider accounts can update a business profile.',
             ], 403);
         }
 
         $provider =
             $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
@@ -319,11 +333,9 @@ class ServiceProviderController extends Controller
         $provider->save();
 
         return response()->json([
-            'message' =>
-                'Business profile updated successfully.',
+            'message' => 'Business profile updated successfully.',
 
-            'provider' =>
-                $provider->load('categories'),
+            'provider' => $provider->load('categories'),
         ]);
     }
 
@@ -334,10 +346,9 @@ class ServiceProviderController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can access provider categories.',
+                'message' => 'Only service provider accounts can access provider categories.',
             ], 403);
         }
 
@@ -347,16 +358,14 @@ class ServiceProviderController extends Controller
             ])
             ->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
         return response()->json([
-            'categories' =>
-                $provider->categories,
+            'categories' => $provider->categories,
         ]);
     }
 
@@ -368,20 +377,18 @@ class ServiceProviderController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can update provider categories.',
+                'message' => 'Only service provider accounts can update provider categories.',
             ], 403);
         }
 
         $provider =
             $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
@@ -404,17 +411,15 @@ class ServiceProviderController extends Controller
         );
 
         return response()->json([
-            'message' =>
-                'Provider categories updated successfully.',
+            'message' => 'Provider categories updated successfully.',
 
-            'categories' =>
-                $provider->categories()
-                    ->select(
-                        'service_categories.id',
-                        'service_categories.name',
-                        'service_categories.slug'
-                    )
-                    ->get(),
+            'categories' => $provider->categories()
+                ->select(
+                    'service_categories.id',
+                    'service_categories.name',
+                    'service_categories.slug'
+                )
+                ->get(),
         ]);
     }
 
@@ -426,10 +431,9 @@ class ServiceProviderController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can access the provider dashboard.',
+                'message' => 'Only service provider accounts can access the provider dashboard.',
             ], 403);
         }
 
@@ -447,10 +451,9 @@ class ServiceProviderController extends Controller
             ])
             ->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
@@ -469,89 +472,64 @@ class ServiceProviderController extends Controller
         )->count();
 
         return response()->json([
-            'message' =>
-                'Provider dashboard loaded successfully.',
+            'message' => 'Provider dashboard loaded successfully.',
 
             'dashboard' => [
 
                 'provider' => [
-                    'id' =>
-                        $provider->id,
+                    'id' => $provider->id,
 
-                    'business_name' =>
-                        $provider->business_name,
+                    'business_name' => $provider->business_name,
 
-                    'business_slug' =>
-                        $provider->business_slug,
+                    'business_slug' => $provider->business_slug,
                 ],
 
                 'verification' => [
-                    'status' =>
-                        $provider->verification_status,
+                    'status' => $provider->verification_status,
 
-                    'notes' =>
-                        $provider->verification_notes,
+                    'notes' => $provider->verification_notes,
 
-                    'verified_at' =>
-                        $provider->verified_at,
+                    'verified_at' => $provider->verified_at,
                 ],
 
                 'business' => [
-                    'description' =>
-                        $provider->description,
+                    'description' => $provider->description,
 
-                    'phone' =>
-                        $provider->phone,
+                    'phone' => $provider->phone,
 
-                    'whatsapp' =>
-                        $provider->whatsapp,
+                    'whatsapp' => $provider->whatsapp,
 
-                    'email' =>
-                        $provider->email,
+                    'email' => $provider->email,
 
-                    'website' =>
-                        $provider->website,
+                    'website' => $provider->website,
 
-                    'address' =>
-                        $provider->address,
+                    'address' => $provider->address,
 
-                    'city' =>
-                        $provider->city,
+                    'city' => $provider->city,
 
-                    'district' =>
-                        $provider->district,
+                    'district' => $provider->district,
 
-                    'latitude' =>
-                        $provider->latitude,
+                    'latitude' => $provider->latitude,
 
-                    'longitude' =>
-                        $provider->longitude,
+                    'longitude' => $provider->longitude,
 
-                    'logo' =>
-                        $provider->logo,
+                    'logo' => $provider->logo,
 
-                    'cover_image' =>
-                        $provider->cover_image,
+                    'cover_image' => $provider->cover_image,
 
-                    'is_active' =>
-                        $provider->is_active,
+                    'is_active' => $provider->is_active,
                 ],
 
-                'categories' =>
-                    $provider->categories,
+                'categories' => $provider->categories,
 
                 'statistics' => [
-                    'categories_count' =>
-                        $provider->categories->count(),
+                    'categories_count' => $provider->categories->count(),
 
-                    'services_count' =>
-                        $provider->services_count,
+                    'services_count' => $provider->services_count,
 
-                    'packages_count' =>
-                        $packagesCount,
+                    'packages_count' => $packagesCount,
 
-                    'bookings_count' =>
-                        $provider->bookings_count,
+                    'bookings_count' => $provider->bookings_count,
 
                     /*
                      * Reviews are not implemented yet.
@@ -596,13 +574,13 @@ class ServiceProviderController extends Controller
                 );
             }
 
-            if (!$query->exists()) {
+            if (! $query->exists()) {
                 break;
             }
 
             $slug =
-                $originalSlug .
-                '-' .
+                $originalSlug.
+                '-'.
                 $counter;
 
             $counter++;

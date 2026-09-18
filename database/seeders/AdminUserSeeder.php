@@ -10,13 +10,24 @@ class AdminUserSeeder extends Seeder
 {
     public function run(): void
     {
+        if (! app()->environment(['local', 'testing'])) {
+            return;
+        }
+
+        $email = env('ADMIN_EMAIL');
+        $password = env('ADMIN_PASSWORD');
+
+        if (! is_string($email) || $email === '' || ! is_string($password) || $password === '') {
+            return;
+        }
+
         $admin = User::firstOrCreate(
             [
-                'email' => 'admin@weddingmarketplace.test',
+                'email' => $email,
             ],
             [
                 'name' => 'Platform Admin',
-                'password' => Hash::make('AdminPassword123!'),
+                'password' => Hash::make($password),
             ]
         );
 

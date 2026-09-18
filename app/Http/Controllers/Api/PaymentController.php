@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\PaymentResource;
 use App\Models\Booking;
 use App\Models\Payment;
 use Illuminate\Http\JsonResponse;
@@ -13,6 +14,68 @@ use Illuminate\Support\Str;
 class PaymentController extends Controller
 {
     /**
+     * List payments belonging to the authenticated customer.
+     */
+    public function index(
+        Request $request
+    ): JsonResponse {
+        $user = $request->user();
+
+        $payments = Payment::query()
+            ->where(
+                'customer_id',
+                $user->id
+            )
+            ->with([
+                'booking.service',
+                'booking.package',
+            ])
+            ->latest('id')
+            ->get();
+
+        return response()->json([
+            'payments' => $payments->map(
+                fn (Payment $payment): array => (new PaymentResource($payment))->toArray($request)
+            )->values(),
+        ]);
+    }
+
+    /**
+     * Show a payment belonging to the authenticated customer.
+     */
+    public function show(
+        Request $request,
+        int $id
+    ): JsonResponse {
+        $user = $request->user();
+
+        $payment = Payment::query()
+            ->where(
+                'id',
+                $id
+            )
+            ->where(
+                'customer_id',
+                $user->id
+            )
+            ->with([
+                'booking.service',
+                'booking.package',
+            ])
+            ->first();
+
+        if (! $payment) {
+            return response()->json([
+                'message' => 'Payment not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'payment' => (new PaymentResource($payment))->toArray($request),
+        ]);
+    }
+
+    /**
      * Start a payment attempt.
      */
     public function store(
@@ -21,10 +84,9 @@ class PaymentController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('customer')) {
+        if (! $user->hasRole('customer')) {
             return response()->json([
-                'message' =>
-                    'Only customer accounts can initiate payments.',
+                'message' => 'Only customer accounts can initiate payments.',
             ], 403);
         }
 
@@ -36,82 +98,77 @@ class PaymentController extends Controller
             ],
         ]);
 
-        $booking = Booking::query()
-            ->where('id', $bookingId)
-            ->where('customer_id', $user->id)
-            ->first();
-
-        if (!$booking) {
-            return response()->json([
-                'message' => 'Booking not found.',
-            ], 404);
-        }
-
-        if ($booking->booking_status !== 'accepted') {
-            return response()->json([
-                'message' =>
-                    'Only accepted bookings can be paid.',
-            ], 422);
-        }
-
-        if ($booking->payment_status === 'paid') {
-            return response()->json([
-                'message' =>
-                    'This booking has already been paid.',
-            ], 422);
-        }
-
-        $activePayment = $booking->payments()
-            ->whereIn('status', [
-                'pending',
-                'processing',
-            ])
-            ->latest()
-            ->first();
-
-        if ($activePayment) {
-            return response()->json([
-                'message' =>
-                    'An active payment attempt already exists for this booking.',
-
-                'payment' =>
-                    $activePayment,
-            ], 409);
-        }
-
-        $payment = DB::transaction(
+        $result = DB::transaction(
             function () use (
-                $booking,
                 $user,
+                $bookingId,
                 $validated
             ) {
-                $payment = Payment::create([
-                    'booking_id' =>
-                        $booking->id,
+                $booking = Booking::query()
+                    ->where('id', $bookingId)
+                    ->where('customer_id', $user->id)
+                    ->lockForUpdate()
+                    ->first();
 
-                    'customer_id' =>
-                        $user->id,
+                if (! $booking) {
+                    return [
+                        'error' => true,
+                        'status' => 404,
+                        'message' => 'Booking not found.',
+                    ];
+                }
 
-                    'payment_reference' =>
-                        $this->generatePaymentReference(),
+                if ($booking->booking_status !== 'accepted') {
+                    return [
+                        'error' => true,
+                        'status' => 422,
+                        'message' => 'Only accepted bookings can be paid.',
+                    ];
+                }
 
-                    'amount' =>
-                        $booking->total_amount,
+                if ($booking->payment_status === 'paid') {
+                    return [
+                        'error' => true,
+                        'status' => 422,
+                        'message' => 'This booking has already been paid.',
+                    ];
+                }
 
-                    'currency' =>
-                        'LKR',
-
-                    'payment_method' =>
-                        $validated['payment_method'],
-
-                    'status' =>
+                $activePayment = $booking->payments()
+                    ->whereIn('status', [
                         'pending',
+                        'processing',
+                    ])
+                    ->latest()
+                    ->first();
 
-                    'gateway' =>
-                        null,
+                if ($activePayment) {
+                    return [
+                        'error' => true,
+                        'status' => 409,
+                        'message' => 'An active payment attempt already exists for this booking.',
+                        'payment' => $activePayment,
+                    ];
+                }
 
-                    'gateway_transaction_id' =>
-                        null,
+                $payment = Payment::create([
+                    'booking_id' => $booking->id,
+
+                    'customer_id' => $user->id,
+
+                    'payment_reference' => $this->generatePaymentReference(),
+
+                    'amount' => $booking->total_amount,
+
+                    'currency' => 'LKR',
+
+                    'payment_method' => $validated['payment_method'],
+
+                    'status' => 'pending',
+
+                    'gateway' => null,
+
+                    'gateway_transaction_id' => null,
                 ]);
 
                 $booking->payment_status =
@@ -119,18 +176,28 @@ class PaymentController extends Controller
 
                 $booking->save();
 
-                return $payment;
+                return [
+                    'error' => false,
+                    'payment' => $payment,
+                ];
             }
         );
 
-        return response()->json([
-            'message' =>
-                'Payment initiated successfully.',
+        if ($result['error']) {
+            return response()->json([
+                'message' => $result['message'],
+                ...isset($result['payment'])
+                    ? ['payment' => $result['payment']]
+                    : [],
+            ], $result['status']);
+        }
 
-            'payment' =>
-                $payment->load([
-                    'booking:id,booking_reference,customer_id,total_amount,booking_status,payment_status',
-                ]),
+        return response()->json([
+            'message' => 'Payment initiated successfully.',
+
+            'payment' => $result['payment']->load([
+                'booking:id,booking_reference,customer_id,total_amount,booking_status,payment_status',
+            ]),
         ], 201);
     }
 
@@ -150,10 +217,15 @@ class PaymentController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('customer')) {
+        if (! app()->environment(['local', 'testing'])) {
             return response()->json([
-                'message' =>
-                    'Only customer accounts can complete this payment flow.',
+                'message' => 'Mock payment confirmation is only available in local and testing environments.',
+            ], 404);
+        }
+
+        if (! $user->hasRole('customer')) {
+            return response()->json([
+                'message' => 'Only customer accounts can complete this payment flow.',
             ], 403);
         }
 
@@ -172,12 +244,11 @@ class PaymentController extends Controller
                     ->lockForUpdate()
                     ->first();
 
-                if (!$booking) {
+                if (! $booking) {
                     return [
                         'error' => true,
                         'status' => 404,
-                        'message' =>
-                            'Booking not found.',
+                        'message' => 'Booking not found.',
                     ];
                 }
 
@@ -194,12 +265,11 @@ class PaymentController extends Controller
                     ->lockForUpdate()
                     ->first();
 
-                if (!$payment) {
+                if (! $payment) {
                     return [
                         'error' => true,
                         'status' => 404,
-                        'message' =>
-                            'Payment not found.',
+                        'message' => 'Payment not found.',
                     ];
                 }
 
@@ -207,13 +277,12 @@ class PaymentController extends Controller
                     return [
                         'error' => true,
                         'status' => 409,
-                        'message' =>
-                            'This payment has already been processed successfully.',
+                        'message' => 'This payment has already been processed successfully.',
                     ];
                 }
 
                 if (
-                    !in_array(
+                    ! in_array(
                         $payment->status,
                         [
                             'pending',
@@ -225,8 +294,7 @@ class PaymentController extends Controller
                     return [
                         'error' => true,
                         'status' => 422,
-                        'message' =>
-                            'This payment cannot be completed from its current status.',
+                        'message' => 'This payment cannot be completed from its current status.',
                     ];
                 }
 
@@ -237,8 +305,7 @@ class PaymentController extends Controller
                     return [
                         'error' => true,
                         'status' => 422,
-                        'message' =>
-                            'The booking is no longer eligible for payment confirmation.',
+                        'message' => 'The booking is no longer eligible for payment confirmation.',
                     ];
                 }
 
@@ -249,8 +316,7 @@ class PaymentController extends Controller
                     return [
                         'error' => true,
                         'status' => 409,
-                        'message' =>
-                            'This booking has already been paid.',
+                        'message' => 'This booking has already been paid.',
                     ];
                 }
 
@@ -264,8 +330,7 @@ class PaymentController extends Controller
                     return [
                         'error' => true,
                         'status' => 422,
-                        'message' =>
-                            'Payment amount does not match the booking total.',
+                        'message' => 'Payment amount does not match the booking total.',
                     ];
                 }
 
@@ -296,27 +361,23 @@ class PaymentController extends Controller
                 return [
                     'error' => false,
 
-                    'payment' =>
-                        $payment->fresh()->load([
-                            'booking:id,booking_reference,customer_id,total_amount,booking_status,payment_status,confirmed_at',
-                        ]),
+                    'payment' => $payment->fresh()->load([
+                        'booking:id,booking_reference,customer_id,total_amount,booking_status,payment_status,confirmed_at',
+                    ]),
                 ];
             }
         );
 
         if ($result['error']) {
             return response()->json([
-                'message' =>
-                    $result['message'],
+                'message' => $result['message'],
             ], $result['status']);
         }
 
         return response()->json([
-            'message' =>
-                'Payment completed successfully. Booking confirmed.',
+            'message' => 'Payment completed successfully. Booking confirmed.',
 
-            'payment' =>
-                $result['payment'],
+            'payment' => $result['payment'],
         ]);
     }
 
@@ -331,6 +392,12 @@ class PaymentController extends Controller
         int $paymentId
     ): JsonResponse {
         $user = $request->user();
+
+        if (! app()->environment(['local', 'testing'])) {
+            return response()->json([
+                'message' => 'Mock payment failure is only available in local and testing environments.',
+            ], 404);
+        }
 
         $validated = $request->validate([
             'failure_reason' => [
@@ -356,12 +423,11 @@ class PaymentController extends Controller
                     ->lockForUpdate()
                     ->first();
 
-                if (!$booking) {
+                if (! $booking) {
                     return [
                         'error' => true,
                         'status' => 404,
-                        'message' =>
-                            'Booking not found.',
+                        'message' => 'Booking not found.',
                     ];
                 }
 
@@ -378,12 +444,11 @@ class PaymentController extends Controller
                     ->lockForUpdate()
                     ->first();
 
-                if (!$payment) {
+                if (! $payment) {
                     return [
                         'error' => true,
                         'status' => 404,
-                        'message' =>
-                            'Payment not found.',
+                        'message' => 'Payment not found.',
                     ];
                 }
 
@@ -391,13 +456,12 @@ class PaymentController extends Controller
                     return [
                         'error' => true,
                         'status' => 409,
-                        'message' =>
-                            'A successful payment cannot be marked as failed.',
+                        'message' => 'A successful payment cannot be marked as failed.',
                     ];
                 }
 
                 if (
-                    !in_array(
+                    ! in_array(
                         $payment->status,
                         [
                             'pending',
@@ -409,8 +473,7 @@ class PaymentController extends Controller
                     return [
                         'error' => true,
                         'status' => 422,
-                        'message' =>
-                            'This payment cannot be marked as failed from its current status.',
+                        'message' => 'This payment cannot be marked as failed from its current status.',
                     ];
                 }
 
@@ -421,8 +484,7 @@ class PaymentController extends Controller
                     return [
                         'error' => true,
                         'status' => 422,
-                        'message' =>
-                            'The booking is no longer eligible for payment processing.',
+                        'message' => 'The booking is no longer eligible for payment processing.',
                     ];
                 }
 
@@ -450,27 +512,23 @@ class PaymentController extends Controller
                 return [
                     'error' => false,
 
-                    'payment' =>
-                        $payment->fresh()->load([
-                            'booking:id,booking_reference,customer_id,total_amount,booking_status,payment_status',
-                        ]),
+                    'payment' => $payment->fresh()->load([
+                        'booking:id,booking_reference,customer_id,total_amount,booking_status,payment_status',
+                    ]),
                 ];
             }
         );
 
         if ($result['error']) {
             return response()->json([
-                'message' =>
-                    $result['message'],
+                'message' => $result['message'],
             ], $result['status']);
         }
 
         return response()->json([
-            'message' =>
-                'Payment marked as failed. The booking can be paid again.',
+            'message' => 'Payment marked as failed. The booking can be paid again.',
 
-            'payment' =>
-                $result['payment'],
+            'payment' => $result['payment'],
         ]);
     }
 
@@ -483,6 +541,12 @@ class PaymentController extends Controller
         int $paymentId
     ): JsonResponse {
         $user = $request->user();
+
+        if (! app()->environment(['local', 'testing'])) {
+            return response()->json([
+                'message' => 'Mock payment cancellation is only available in local and testing environments.',
+            ], 404);
+        }
 
         $result = DB::transaction(
             function () use (
@@ -499,12 +563,11 @@ class PaymentController extends Controller
                     ->lockForUpdate()
                     ->first();
 
-                if (!$booking) {
+                if (! $booking) {
                     return [
                         'error' => true,
                         'status' => 404,
-                        'message' =>
-                            'Booking not found.',
+                        'message' => 'Booking not found.',
                     ];
                 }
 
@@ -521,12 +584,11 @@ class PaymentController extends Controller
                     ->lockForUpdate()
                     ->first();
 
-                if (!$payment) {
+                if (! $payment) {
                     return [
                         'error' => true,
                         'status' => 404,
-                        'message' =>
-                            'Payment not found.',
+                        'message' => 'Payment not found.',
                     ];
                 }
 
@@ -534,13 +596,12 @@ class PaymentController extends Controller
                     return [
                         'error' => true,
                         'status' => 409,
-                        'message' =>
-                            'A successful payment cannot be cancelled.',
+                        'message' => 'A successful payment cannot be cancelled.',
                     ];
                 }
 
                 if (
-                    !in_array(
+                    ! in_array(
                         $payment->status,
                         [
                             'pending',
@@ -552,8 +613,7 @@ class PaymentController extends Controller
                     return [
                         'error' => true,
                         'status' => 422,
-                        'message' =>
-                            'This payment cannot be cancelled from its current status.',
+                        'message' => 'This payment cannot be cancelled from its current status.',
                     ];
                 }
 
@@ -564,8 +624,7 @@ class PaymentController extends Controller
                     return [
                         'error' => true,
                         'status' => 422,
-                        'message' =>
-                            'The booking is no longer eligible for payment processing.',
+                        'message' => 'The booking is no longer eligible for payment processing.',
                     ];
                 }
 
@@ -589,27 +648,23 @@ class PaymentController extends Controller
                 return [
                     'error' => false,
 
-                    'payment' =>
-                        $payment->fresh()->load([
-                            'booking:id,booking_reference,customer_id,total_amount,booking_status,payment_status',
-                        ]),
+                    'payment' => $payment->fresh()->load([
+                        'booking:id,booking_reference,customer_id,total_amount,booking_status,payment_status',
+                    ]),
                 ];
             }
         );
 
         if ($result['error']) {
             return response()->json([
-                'message' =>
-                    $result['message'],
+                'message' => $result['message'],
             ], $result['status']);
         }
 
         return response()->json([
-            'message' =>
-                'Payment attempt cancelled. The booking can be paid again.',
+            'message' => 'Payment attempt cancelled. The booking can be paid again.',
 
-            'payment' =>
-                $result['payment'],
+            'payment' => $result['payment'],
         ]);
     }
 
@@ -620,9 +675,9 @@ class PaymentController extends Controller
     {
         do {
             $reference =
-                'PAY-' .
-                now()->format('Ymd') .
-                '-' .
+                'PAY-'.
+                now()->format('Ymd').
+                '-'.
                 Str::upper(
                     Str::random(6)
                 );

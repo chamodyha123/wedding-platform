@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Service;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -18,19 +19,17 @@ class ServiceController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can access services.',
+                'message' => 'Only service provider accounts can access services.',
             ], 403);
         }
 
         $provider = $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
@@ -57,19 +56,17 @@ class ServiceController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can access services.',
+                'message' => 'Only service provider accounts can access services.',
             ], 403);
         }
 
         $provider = $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
@@ -80,7 +77,7 @@ class ServiceController extends Controller
             ->where('id', $id)
             ->first();
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'message' => 'Service not found.',
             ], 404);
@@ -98,10 +95,9 @@ class ServiceController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can create services.',
+                'message' => 'Only service provider accounts can create services.',
             ], 403);
         }
 
@@ -109,24 +105,21 @@ class ServiceController extends Controller
             ->with('categories')
             ->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
-        if (!$provider->is_active) {
+        if (! $provider->is_active) {
             return response()->json([
-                'message' =>
-                    'Your provider account is inactive and cannot create services.',
+                'message' => 'Your provider account is inactive and cannot create services.',
             ], 403);
         }
 
         if ($provider->verification_status !== 'verified') {
             return response()->json([
-                'message' =>
-                    'Your business must be verified before you can create services.',
+                'message' => 'Your business must be verified before you can create services.',
             ], 403);
         }
 
@@ -163,45 +156,47 @@ class ServiceController extends Controller
             )
             ->exists();
 
-        if (!$categoryBelongsToProvider) {
+        if (! $categoryBelongsToProvider) {
             return response()->json([
-                'message' =>
-                    'You can only create services under categories assigned to your business.',
+                'message' => 'You can only create services under categories assigned to your business.',
             ], 422);
         }
 
-        $service = Service::create([
-            'service_provider_id' => $provider->id,
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            try {
+                $service = Service::create([
+                    'service_provider_id' => $provider->id,
 
-            'service_category_id' =>
-                $validated['service_category_id'],
+                    'service_category_id' => $validated['service_category_id'],
 
-            'name' =>
-                $validated['name'],
+                    'name' => $validated['name'],
 
-            'slug' =>
-                $this->generateUniqueSlug(
-                    $provider->id,
-                    $validated['name']
-                ),
+                    'slug' => $this->generateUniqueSlug(
+                        $provider->id,
+                        $validated['name']
+                    ),
 
-            'description' =>
-                $validated['description'] ?? null,
+                    'description' => $validated['description'] ?? null,
 
-            'status' =>
-                $validated['status'] ?? 'draft',
+                    'status' => $validated['status'] ?? 'draft',
 
-            'is_featured' => false,
-        ]);
+                    'is_featured' => false,
+                ]);
+
+                break;
+            } catch (QueryException $exception) {
+                if ($exception->getCode() !== '23505' || $attempt === 2) {
+                    throw $exception;
+                }
+            }
+        }
 
         return response()->json([
-            'message' =>
-                'Service created successfully.',
+            'message' => 'Service created successfully.',
 
-            'service' =>
-                $service->load([
-                    'category:id,name,slug',
-                ]),
+            'service' => $service->load([
+                'category:id,name,slug',
+            ]),
         ], 201);
     }
 
@@ -215,10 +210,9 @@ class ServiceController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can update services.',
+                'message' => 'Only service provider accounts can update services.',
             ], 403);
         }
 
@@ -226,24 +220,21 @@ class ServiceController extends Controller
             ->with('categories')
             ->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
-        if (!$provider->is_active) {
+        if (! $provider->is_active) {
             return response()->json([
-                'message' =>
-                    'Your provider account is inactive and cannot update services.',
+                'message' => 'Your provider account is inactive and cannot update services.',
             ], 403);
         }
 
         if ($provider->verification_status !== 'verified') {
             return response()->json([
-                'message' =>
-                    'Your business must be verified before you can update services.',
+                'message' => 'Your business must be verified before you can update services.',
             ], 403);
         }
 
@@ -251,7 +242,7 @@ class ServiceController extends Controller
             ->where('id', $id)
             ->first();
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'message' => 'Service not found.',
             ], 404);
@@ -295,10 +286,9 @@ class ServiceController extends Controller
                     )
                     ->exists();
 
-            if (!$categoryBelongsToProvider) {
+            if (! $categoryBelongsToProvider) {
                 return response()->json([
-                    'message' =>
-                        'You can only assign services to categories belonging to your business.',
+                    'message' => 'You can only assign services to categories belonging to your business.',
                 ], 422);
             }
         }
@@ -320,13 +310,11 @@ class ServiceController extends Controller
         $service->save();
 
         return response()->json([
-            'message' =>
-                'Service updated successfully.',
+            'message' => 'Service updated successfully.',
 
-            'service' =>
-                $service->load([
-                    'category:id,name,slug',
-                ]),
+            'service' => $service->load([
+                'category:id,name,slug',
+            ]),
         ]);
     }
 
@@ -340,33 +328,29 @@ class ServiceController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can delete services.',
+                'message' => 'Only service provider accounts can delete services.',
             ], 403);
         }
 
         $provider = $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
-        if (!$provider->is_active) {
+        if (! $provider->is_active) {
             return response()->json([
-                'message' =>
-                    'Your provider account is inactive and cannot delete services.',
+                'message' => 'Your provider account is inactive and cannot delete services.',
             ], 403);
         }
 
         if ($provider->verification_status !== 'verified') {
             return response()->json([
-                'message' =>
-                    'Your business must be verified before you can delete services.',
+                'message' => 'Your business must be verified before you can delete services.',
             ], 403);
         }
 
@@ -378,7 +362,7 @@ class ServiceController extends Controller
             ->where('id', $id)
             ->first();
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'message' => 'Service not found.',
             ], 404);
@@ -392,8 +376,7 @@ class ServiceController extends Controller
         $service->delete();
 
         return response()->json([
-            'message' =>
-                'Service deleted successfully.',
+            'message' => 'Service deleted successfully.',
         ]);
     }
 
@@ -436,13 +419,13 @@ class ServiceController extends Controller
                 );
             }
 
-            if (!$query->exists()) {
+            if (! $query->exists()) {
                 break;
             }
 
             $slug =
-                $originalSlug .
-                '-' .
+                $originalSlug.
+                '-'.
                 $counter;
 
             $counter++;
