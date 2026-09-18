@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Admin\ProviderVerificationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
+use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ServiceAvailabilityController;
 use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\ServicePackageController;
@@ -80,6 +81,17 @@ Route::middleware([
         Route::post('/bookings/{id}/cancel', [
             BookingController::class,
             'cancel'
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Customer Payments
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post('/bookings/{bookingId}/payments', [
+            PaymentController::class,
+            'store'
         ]);
     });
 
