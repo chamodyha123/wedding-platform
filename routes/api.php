@@ -93,6 +93,30 @@ Route::middleware([
             PaymentController::class,
             'store'
         ]);
+
+        Route::post(
+            '/bookings/{bookingId}/payments/{paymentId}/success',
+            [
+                PaymentController::class,
+                'success'
+            ]
+        );
+
+        Route::post(
+            '/bookings/{bookingId}/payments/{paymentId}/fail',
+            [
+                PaymentController::class,
+                'fail'
+            ]
+        );
+
+        Route::post(
+            '/bookings/{bookingId}/payments/{paymentId}/cancel',
+            [
+                PaymentController::class,
+                'cancel'
+            ]
+        );
     });
 
 
@@ -109,12 +133,6 @@ Route::middleware([
     ->prefix('provider')
     ->group(function () {
 
-        /*
-        |--------------------------------------------------------------------------
-        | Provider Business Profile
-        |--------------------------------------------------------------------------
-        */
-
         Route::post('/profile', [
             ServiceProviderController::class,
             'store'
@@ -130,12 +148,6 @@ Route::middleware([
             'update'
         ]);
 
-        /*
-        |--------------------------------------------------------------------------
-        | Provider Categories
-        |--------------------------------------------------------------------------
-        */
-
         Route::get('/categories', [
             ServiceProviderController::class,
             'categories'
@@ -145,12 +157,6 @@ Route::middleware([
             ServiceProviderController::class,
             'updateCategories'
         ]);
-
-        /*
-        |--------------------------------------------------------------------------
-        | Provider Dashboard
-        |--------------------------------------------------------------------------
-        */
 
         Route::get('/dashboard', [
             ServiceProviderController::class,
