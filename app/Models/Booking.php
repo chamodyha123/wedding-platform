@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Booking extends Model
 {
@@ -100,6 +101,20 @@ class Booking extends Model
         return $this->belongsTo(
             ServicePackage::class,
             'service_package_id'
+        );
+    }
+
+    /**
+     * Payment attempts made for this booking.
+     *
+     * A booking can have multiple payment attempts
+     * because a payment may fail and be retried.
+     */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(
+            Payment::class,
+            'booking_id'
         );
     }
 }
