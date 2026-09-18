@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\PaymentResource;
+use App\Http\Resources\ProviderPaymentResource;
 use App\Models\Booking;
 use App\Models\Payment;
 use Illuminate\Http\JsonResponse;
@@ -13,6 +14,75 @@ use Illuminate\Support\Str;
 
 class PaymentController extends Controller
 {
+    /**
+     * List payments for bookings owned by the authenticated provider.
+     */
+    public function providerIndex(Request $request): JsonResponse
+    {
+        $provider = $request->user()->serviceProvider()->first();
+
+        if (! $provider) {
+            return response()->json([
+                'message' => 'Business profile not found.',
+            ], 404);
+        }
+
+        $payments = Payment::query()
+            ->whereHas('booking', function ($query) use ($provider): void {
+                $query->where('service_provider_id', $provider->id);
+            })
+            ->with([
+                'booking.customer:id,name,email',
+                'booking.service:id,name,slug',
+                'booking.package:id,name,slug,price,duration_minutes',
+            ])
+            ->latest('id')
+            ->get();
+
+        return response()->json([
+            'message' => 'Provider payments loaded successfully.',
+            'payments' => $payments->map(
+                fn (Payment $payment): array => (new ProviderPaymentResource($payment))->toArray($request)
+            )->values(),
+        ]);
+    }
+
+    /**
+     * Show a payment for a booking owned by the authenticated provider.
+     */
+    public function providerShow(Request $request, int $id): JsonResponse
+    {
+        $provider = $request->user()->serviceProvider()->first();
+
+        if (! $provider) {
+            return response()->json([
+                'message' => 'Business profile not found.',
+            ], 404);
+        }
+
+        $payment = Payment::query()
+            ->whereKey($id)
+            ->whereHas('booking', function ($query) use ($provider): void {
+                $query->where('service_provider_id', $provider->id);
+            })
+            ->with([
+                'booking.customer:id,name,email',
+                'booking.service:id,name,slug',
+                'booking.package:id,name,slug,price,duration_minutes',
+            ])
+            ->first();
+
+        if (! $payment) {
+            return response()->json([
+                'message' => 'Payment not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'payment' => (new ProviderPaymentResource($payment))->toArray($request),
+        ]);
+    }
+
     /**
      * List payments belonging to the authenticated customer.
      */
