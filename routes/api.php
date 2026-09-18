@@ -10,7 +10,6 @@ use App\Http\Controllers\Api\ServicePackageController;
 use App\Http\Controllers\Api\ServiceProviderController;
 use Illuminate\Support\Facades\Route;
 
-
 /*
 |--------------------------------------------------------------------------
 | Authentication Routes
@@ -21,28 +20,27 @@ Route::prefix('auth')->group(function () {
 
     Route::post('/register', [
         AuthController::class,
-        'register'
-    ]);
+        'register',
+    ])->middleware('throttle:register');
 
     Route::post('/login', [
         AuthController::class,
-        'login'
-    ]);
+        'login',
+    ])->middleware('throttle:login');
 
     Route::middleware('auth:sanctum')->group(function () {
 
         Route::get('/me', [
             AuthController::class,
-            'me'
+            'me',
         ]);
 
         Route::post('/logout', [
             AuthController::class,
-            'logout'
+            'logout',
         ]);
     });
 });
-
 
 /*
 |--------------------------------------------------------------------------
@@ -52,7 +50,7 @@ Route::prefix('auth')->group(function () {
 
 Route::middleware([
     'auth:sanctum',
-    'role:customer'
+    'role:customer',
 ])
     ->prefix('customer')
     ->group(function () {
@@ -65,22 +63,22 @@ Route::middleware([
 
         Route::get('/bookings', [
             BookingController::class,
-            'index'
+            'index',
         ]);
 
         Route::post('/bookings', [
             BookingController::class,
-            'store'
+            'store',
         ]);
 
         Route::get('/bookings/{id}', [
             BookingController::class,
-            'show'
+            'show',
         ]);
 
         Route::post('/bookings/{id}/cancel', [
             BookingController::class,
-            'cancel'
+            'cancel',
         ]);
 
         /*
@@ -89,12 +87,45 @@ Route::middleware([
         |--------------------------------------------------------------------------
         */
 
+        Route::get('/payments', [
+            PaymentController::class,
+            'index',
+        ]);
+
+        Route::get('/payments/{id}', [
+            PaymentController::class,
+            'show',
+        ]);
+
         Route::post('/bookings/{bookingId}/payments', [
             PaymentController::class,
-            'store'
+            'store',
         ]);
-    });
 
+        Route::post(
+            '/bookings/{bookingId}/payments/{paymentId}/success',
+            [
+                PaymentController::class,
+                'success',
+            ]
+        );
+
+        Route::post(
+            '/bookings/{bookingId}/payments/{paymentId}/fail',
+            [
+                PaymentController::class,
+                'fail',
+            ]
+        );
+
+        Route::post(
+            '/bookings/{bookingId}/payments/{paymentId}/cancel',
+            [
+                PaymentController::class,
+                'cancel',
+            ]
+        );
+    });
 
 /*
 |--------------------------------------------------------------------------
@@ -104,30 +135,30 @@ Route::middleware([
 
 Route::middleware([
     'auth:sanctum',
-    'role:service_provider'
+    'role:service_provider',
 ])
     ->prefix('provider')
     ->group(function () {
 
         /*
         |--------------------------------------------------------------------------
-        | Provider Business Profile
+        | Provider Profile
         |--------------------------------------------------------------------------
         */
 
         Route::post('/profile', [
             ServiceProviderController::class,
-            'store'
+            'store',
         ]);
 
         Route::get('/profile', [
             ServiceProviderController::class,
-            'show'
+            'show',
         ]);
 
         Route::put('/profile', [
             ServiceProviderController::class,
-            'update'
+            'update',
         ]);
 
         /*
@@ -138,12 +169,12 @@ Route::middleware([
 
         Route::get('/categories', [
             ServiceProviderController::class,
-            'categories'
+            'categories',
         ]);
 
         Route::put('/categories', [
             ServiceProviderController::class,
-            'updateCategories'
+            'updateCategories',
         ]);
 
         /*
@@ -154,7 +185,7 @@ Route::middleware([
 
         Route::get('/dashboard', [
             ServiceProviderController::class,
-            'dashboard'
+            'dashboard',
         ]);
 
         /*
@@ -165,27 +196,27 @@ Route::middleware([
 
         Route::get('/bookings', [
             BookingController::class,
-            'providerIndex'
+            'providerIndex',
         ]);
 
         Route::get('/bookings/{id}', [
             BookingController::class,
-            'providerShow'
+            'providerShow',
         ]);
 
         Route::post('/bookings/{id}/accept', [
             BookingController::class,
-            'accept'
+            'accept',
         ]);
 
         Route::post('/bookings/{id}/reject', [
             BookingController::class,
-            'reject'
+            'reject',
         ]);
 
         Route::post('/bookings/{id}/complete', [
             BookingController::class,
-            'complete'
+            'complete',
         ]);
 
         /*
@@ -196,27 +227,27 @@ Route::middleware([
 
         Route::get('/services', [
             ServiceController::class,
-            'index'
+            'index',
         ]);
 
         Route::get('/services/{id}', [
             ServiceController::class,
-            'show'
+            'show',
         ]);
 
         Route::post('/services', [
             ServiceController::class,
-            'store'
+            'store',
         ]);
 
         Route::put('/services/{id}', [
             ServiceController::class,
-            'update'
+            'update',
         ]);
 
         Route::delete('/services/{id}', [
             ServiceController::class,
-            'destroy'
+            'destroy',
         ]);
 
         /*
@@ -227,19 +258,19 @@ Route::middleware([
 
         Route::get('/services/{serviceId}/packages', [
             ServicePackageController::class,
-            'index'
+            'index',
         ]);
 
         Route::post('/services/{serviceId}/packages', [
             ServicePackageController::class,
-            'store'
+            'store',
         ]);
 
         Route::get(
             '/services/{serviceId}/packages/{packageId}',
             [
                 ServicePackageController::class,
-                'show'
+                'show',
             ]
         );
 
@@ -247,7 +278,7 @@ Route::middleware([
             '/services/{serviceId}/packages/{packageId}',
             [
                 ServicePackageController::class,
-                'update'
+                'update',
             ]
         );
 
@@ -255,7 +286,7 @@ Route::middleware([
             '/services/{serviceId}/packages/{packageId}',
             [
                 ServicePackageController::class,
-                'destroy'
+                'destroy',
             ]
         );
 
@@ -269,7 +300,7 @@ Route::middleware([
             '/services/{serviceId}/availability',
             [
                 ServiceAvailabilityController::class,
-                'index'
+                'index',
             ]
         );
 
@@ -277,7 +308,7 @@ Route::middleware([
             '/services/{serviceId}/availability',
             [
                 ServiceAvailabilityController::class,
-                'store'
+                'store',
             ]
         );
 
@@ -285,7 +316,7 @@ Route::middleware([
             '/services/{serviceId}/availability/{availabilityId}',
             [
                 ServiceAvailabilityController::class,
-                'update'
+                'update',
             ]
         );
 
@@ -293,11 +324,10 @@ Route::middleware([
             '/services/{serviceId}/availability/{availabilityId}',
             [
                 ServiceAvailabilityController::class,
-                'destroy'
+                'destroy',
             ]
         );
     });
-
 
 /*
 |--------------------------------------------------------------------------
@@ -307,38 +337,38 @@ Route::middleware([
 
 Route::middleware([
     'auth:sanctum',
-    'role:admin'
+    'role:admin',
 ])
     ->prefix('admin/providers')
     ->group(function () {
 
         Route::get('/pending', [
             ProviderVerificationController::class,
-            'pending'
+            'pending',
         ]);
 
         Route::get('/{id}', [
             ProviderVerificationController::class,
-            'show'
+            'show',
         ]);
 
         Route::post('/{id}/approve', [
             ProviderVerificationController::class,
-            'approve'
+            'approve',
         ]);
 
         Route::post('/{id}/reject', [
             ProviderVerificationController::class,
-            'reject'
+            'reject',
         ]);
 
         Route::post('/{id}/request-changes', [
             ProviderVerificationController::class,
-            'requestChanges'
+            'requestChanges',
         ]);
 
         Route::post('/{id}/suspend', [
             ProviderVerificationController::class,
-            'suspend'
+            'suspend',
         ]);
     });

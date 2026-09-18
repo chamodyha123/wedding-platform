@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Service;
+use App\Models\ServiceProvider;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,10 +20,9 @@ class BookingController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('customer')) {
+        if (! $user->hasRole('customer')) {
             return response()->json([
-                'message' =>
-                    'Only customer accounts can access customer bookings.',
+                'message' => 'Only customer accounts can access customer bookings.',
             ], 403);
         }
 
@@ -40,11 +40,9 @@ class BookingController extends Controller
             ->get();
 
         return response()->json([
-            'message' =>
-                'Customer bookings loaded successfully.',
+            'message' => 'Customer bookings loaded successfully.',
 
-            'bookings' =>
-                $bookings,
+            'bookings' => $bookings,
         ]);
     }
 
@@ -57,10 +55,9 @@ class BookingController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('customer')) {
+        if (! $user->hasRole('customer')) {
             return response()->json([
-                'message' =>
-                    'Only customer accounts can access customer bookings.',
+                'message' => 'Only customer accounts can access customer bookings.',
             ], 403);
         }
 
@@ -80,19 +77,16 @@ class BookingController extends Controller
             ])
             ->first();
 
-        if (!$booking) {
+        if (! $booking) {
             return response()->json([
-                'message' =>
-                    'Booking not found.',
+                'message' => 'Booking not found.',
             ], 404);
         }
 
         return response()->json([
-            'message' =>
-                'Booking loaded successfully.',
+            'message' => 'Booking loaded successfully.',
 
-            'booking' =>
-                $booking,
+            'booking' => $booking,
         ]);
     }
 
@@ -105,10 +99,9 @@ class BookingController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('customer')) {
+        if (! $user->hasRole('customer')) {
             return response()->json([
-                'message' =>
-                    'Only customer accounts can cancel bookings.',
+                'message' => 'Only customer accounts can cancel bookings.',
             ], 403);
         }
 
@@ -126,67 +119,73 @@ class BookingController extends Controller
          * A customer can only find and cancel
          * their own bookings.
          */
-        $booking = Booking::query()
-            ->where(
-                'id',
-                $id
-            )
-            ->where(
-                'customer_id',
-                $user->id
-            )
-            ->first();
+        $booking = DB::transaction(function () use (
+            $id,
+            $user,
+            $validated
+        ) {
+            $booking = Booking::query()
+                ->where('id', $id)
+                ->where('customer_id', $user->id)
+                ->lockForUpdate()
+                ->first();
 
-        if (!$booking) {
-            return response()->json([
-                'message' =>
-                    'Booking not found.',
-            ], 404);
+            if (! $booking) {
+                return response()->json([
+                    'message' => 'Booking not found.',
+                ], 404);
+            }
+
+            if (! in_array(
+                $booking->booking_status,
+                [
+                    'pending',
+                    'accepted',
+                ],
+                true
+            )) {
+                return response()->json([
+                    'message' => 'Only pending or accepted bookings can be cancelled.',
+                ], 422);
+            }
+
+            $cancelledAt = now();
+
+            $activePayments = $booking->payments()
+                ->whereIn('status', [
+                    'pending',
+                    'processing',
+                ])
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($activePayments as $payment) {
+                $payment->status = 'cancelled';
+                $payment->cancelled_at = $cancelledAt;
+                $payment->save();
+            }
+
+            $booking->booking_status = 'cancelled';
+            $booking->cancellation_reason = $validated['cancellation_reason'];
+            $booking->cancelled_at = $cancelledAt;
+            $booking->payment_status = 'unpaid';
+            $booking->save();
+
+            return $booking;
+        });
+
+        if ($booking instanceof JsonResponse) {
+            return $booking;
         }
-
-        /*
-         * Before payment support is implemented,
-         * customers may cancel pending or accepted
-         * bookings.
-         *
-         * Confirmed bookings will later use payment
-         * and refund rules.
-         */
-        if (!in_array(
-            $booking->booking_status,
-            [
-                'pending',
-                'accepted',
-            ],
-            true
-        )) {
-            return response()->json([
-                'message' =>
-                    'Only pending or accepted bookings can be cancelled.',
-            ], 422);
-        }
-
-        $booking->booking_status =
-            'cancelled';
-
-        $booking->cancellation_reason =
-            $validated['cancellation_reason'];
-
-        $booking->cancelled_at =
-            now();
-
-        $booking->save();
 
         return response()->json([
-            'message' =>
-                'Booking cancelled successfully.',
+            'message' => 'Booking cancelled successfully.',
 
-            'booking' =>
-                $booking->load([
-                    'provider:id,business_name,business_slug',
-                    'service:id,name,slug',
-                    'package:id,name,slug,price,duration_minutes',
-                ]),
+            'booking' => $booking->load([
+                'provider:id,business_name,business_slug',
+                'service:id,name,slug',
+                'package:id,name,slug,price,duration_minutes',
+            ]),
         ]);
     }
 
@@ -197,10 +196,9 @@ class BookingController extends Controller
     {
         $user = $request->user();
 
-        if (!$user->hasRole('customer')) {
+        if (! $user->hasRole('customer')) {
             return response()->json([
-                'message' =>
-                    'Only customer accounts can create bookings.',
+                'message' => 'Only customer accounts can create bookings.',
             ], 403);
         }
 
@@ -247,239 +245,228 @@ class BookingController extends Controller
             ],
         ]);
 
-        /*
-         * Only published, non-soft-deleted services
-         * can be booked.
-         */
-        $service = Service::with([
-            'provider',
-        ])
-            ->where(
-                'id',
-                $validated['service_id']
-            )
-            ->where(
-                'status',
-                'published'
-            )
-            ->first();
-
-        if (!$service) {
-            return response()->json([
-                'message' =>
-                    'The selected service is not available for booking.',
-            ], 422);
-        }
-
-        /*
-         * Provider must be active and verified.
-         */
-        $provider = $service->provider;
-
-        if (
-            !$provider ||
-            !$provider->is_active ||
-            $provider->verification_status !== 'verified'
+        $booking = DB::transaction(function () use (
+            $user,
+            $validated
         ) {
-            return response()->json([
-                'message' =>
-                    'The selected service provider is not currently available for bookings.',
-            ], 422);
-        }
+            /*
+             * Only published, non-soft-deleted services
+             * can be booked.
+             */
+            $service = Service::with([
+                'provider',
+            ])
+                ->where(
+                    'id',
+                    $validated['service_id']
+                )
+                ->where(
+                    'status',
+                    'published'
+                )
+                ->first();
 
-        /*
-         * Package must belong to the selected service
-         * and must be published.
-         */
-        $package = $service->packages()
-            ->where(
-                'id',
-                $validated['service_package_id']
-            )
-            ->where(
-                'status',
-                'published'
-            )
-            ->first();
-
-        if (!$package) {
-            return response()->json([
-                'message' =>
-                    'The selected package is not available for this service.',
-            ], 422);
-        }
-
-        /*
-         * Check whether the whole date is unavailable.
-         */
-        $fullDayUnavailable = $service->availabilities()
-            ->whereDate(
-                'date',
-                $validated['event_date']
-            )
-            ->whereNull('start_time')
-            ->whereNull('end_time')
-            ->whereIn(
-                'status',
-                [
-                    'unavailable',
-                    'blocked',
-                    'booked',
-                ]
-            )
-            ->exists();
-
-        if ($fullDayUnavailable) {
-            return response()->json([
-                'message' =>
-                    'The selected date is not available for booking.',
-            ], 422);
-        }
-
-        /*
-         * Requested time must fit completely inside
-         * at least one available time slot.
-         */
-        $availableSlotExists = $service->availabilities()
-            ->whereDate(
-                'date',
-                $validated['event_date']
-            )
-            ->where(
-                'status',
-                'available'
-            )
-            ->whereNotNull('start_time')
-            ->whereNotNull('end_time')
-            ->where(
-                'start_time',
-                '<=',
-                $validated['start_time']
-            )
-            ->where(
-                'end_time',
-                '>=',
-                $validated['end_time']
-            )
-            ->exists();
-
-        if (!$availableSlotExists) {
-            return response()->json([
-                'message' =>
-                    'The selected time is outside the service availability.',
-            ], 422);
-        }
-
-        /*
-         * Prevent overlapping bookings for this provider.
-         *
-         * Rejected, cancelled, and completed bookings
-         * do not block the provider's schedule.
-         */
-        $bookingConflictExists = Booking::where(
-            'service_provider_id',
-            $provider->id
-        )
-            ->whereDate(
-                'event_date',
-                $validated['event_date']
-            )
-            ->whereIn(
-                'booking_status',
-                [
-                    'pending',
-                    'accepted',
-                    'confirmed',
-                ]
-            )
-            ->where(
-                'start_time',
-                '<',
-                $validated['end_time']
-            )
-            ->where(
-                'end_time',
-                '>',
-                $validated['start_time']
-            )
-            ->exists();
-
-        if ($bookingConflictExists) {
-            return response()->json([
-                'message' =>
-                    'The selected provider already has a booking that overlaps this time.',
-            ], 409);
-        }
-
-        /*
-         * Create the booking atomically.
-         */
-        $booking = DB::transaction(
-            function () use (
-                $user,
-                $provider,
-                $service,
-                $package,
-                $validated
-            ) {
-                return Booking::create([
-                    'booking_reference' =>
-                        $this->generateBookingReference(),
-
-                    'customer_id' =>
-                        $user->id,
-
-                    'service_provider_id' =>
-                        $provider->id,
-
-                    'service_id' =>
-                        $service->id,
-
-                    'service_package_id' =>
-                        $package->id,
-
-                    'event_date' =>
-                        $validated['event_date'],
-
-                    'start_time' =>
-                        $validated['start_time'],
-
-                    'end_time' =>
-                        $validated['end_time'],
-
-                    'event_location' =>
-                        $validated['event_location'] ?? null,
-
-                    'customer_notes' =>
-                        $validated['customer_notes'] ?? null,
-
-                    /*
-                     * Price comes from PostgreSQL,
-                     * never from customer input.
-                     */
-                    'total_amount' =>
-                        $package->price,
-
-                    'booking_status' =>
-                        'pending',
-
-                    'payment_status' =>
-                        'unpaid',
-                ]);
+            if (! $service) {
+                return response()->json([
+                    'message' => 'The selected service is not available for booking.',
+                ], 422);
             }
-        );
+
+            /*
+             * Provider must be active and verified.
+             */
+            $provider = $service->provider;
+
+            if (
+                ! $provider ||
+                ! $provider->is_active ||
+                $provider->verification_status !== 'verified'
+            ) {
+                return response()->json([
+                    'message' => 'The selected service provider is not currently available for bookings.',
+                ], 422);
+            }
+
+            $provider = ServiceProvider::query()
+                ->where('id', $provider->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $provider || ! $provider->is_active || $provider->verification_status !== 'verified') {
+                return response()->json([
+                    'message' => 'The selected service provider is not currently available for bookings.',
+                ], 422);
+            }
+
+            /*
+             * Package must belong to the selected service
+             * and must be published.
+             */
+            $package = $service->packages()
+                ->where(
+                    'id',
+                    $validated['service_package_id']
+                )
+                ->where(
+                    'status',
+                    'published'
+                )
+                ->first();
+
+            if (! $package) {
+                return response()->json([
+                    'message' => 'The selected package is not available for this service.',
+                ], 422);
+            }
+
+            /*
+             * Check whether the whole date is unavailable.
+             */
+            $fullDayUnavailable = $service->availabilities()
+                ->whereDate(
+                    'date',
+                    $validated['event_date']
+                )
+                ->whereNull('start_time')
+                ->whereNull('end_time')
+                ->whereIn(
+                    'status',
+                    [
+                        'unavailable',
+                        'blocked',
+                        'booked',
+                    ]
+                )
+                ->exists();
+
+            if ($fullDayUnavailable) {
+                return response()->json([
+                    'message' => 'The selected date is not available for booking.',
+                ], 422);
+            }
+
+            /*
+             * Requested time must fit completely inside
+             * at least one available time slot.
+             */
+            $availableSlotExists = $service->availabilities()
+                ->whereDate(
+                    'date',
+                    $validated['event_date']
+                )
+                ->where(
+                    'status',
+                    'available'
+                )
+                ->whereNotNull('start_time')
+                ->whereNotNull('end_time')
+                ->where(
+                    'start_time',
+                    '<=',
+                    $validated['start_time']
+                )
+                ->where(
+                    'end_time',
+                    '>=',
+                    $validated['end_time']
+                )
+                ->exists();
+
+            if (! $availableSlotExists) {
+                return response()->json([
+                    'message' => 'The selected time is outside the service availability.',
+                ], 422);
+            }
+
+            /*
+             * Prevent overlapping bookings for this provider.
+             *
+             * Rejected, cancelled, and completed bookings
+             * do not block the provider's schedule.
+             */
+            $bookingConflictExists = Booking::where(
+                'service_provider_id',
+                $provider->id
+            )
+                ->whereDate(
+                    'event_date',
+                    $validated['event_date']
+                )
+                ->whereIn(
+                    'booking_status',
+                    [
+                        'pending',
+                        'accepted',
+                        'confirmed',
+                    ]
+                )
+                ->where(
+                    'start_time',
+                    '<',
+                    $validated['end_time']
+                )
+                ->where(
+                    'end_time',
+                    '>',
+                    $validated['start_time']
+                )
+                ->exists();
+
+            if ($bookingConflictExists) {
+                return response()->json([
+                    'message' => 'The selected provider already has a booking that overlaps this time.',
+                ], 409);
+            }
+
+            /*
+             * Create the booking atomically.
+             */
+            return Booking::create([
+                'booking_reference' => $this->generateBookingReference(),
+
+                'customer_id' => $user->id,
+
+                'service_provider_id' => $provider->id,
+
+                'service_id' => $service->id,
+
+                'service_package_id' => $package->id,
+
+                'event_date' => $validated['event_date'],
+
+                'start_time' => $validated['start_time'],
+
+                'end_time' => $validated['end_time'],
+
+                'event_location' => $validated['event_location'] ?? null,
+
+                'customer_notes' => $validated['customer_notes'] ?? null,
+
+                /*
+                         * Price comes from PostgreSQL,
+                         * never from customer input.
+                         */
+                'total_amount' => $package->price,
+
+                'booking_status' => 'pending',
+
+                'payment_status' => 'unpaid',
+            ]);
+        });
+
+        if ($booking instanceof JsonResponse) {
+            return $booking;
+        }
 
         return response()->json([
-            'message' =>
-                'Booking created successfully.',
+            'message' => 'Booking created successfully.',
 
-            'booking' =>
-                $booking->load([
-                    'customer:id,name,email',
-                    'provider:id,business_name,business_slug',
-                    'service:id,name,slug',
-                    'package:id,name,slug,price,duration_minutes',
-                ]),
+            'booking' => $booking->load([
+                'customer:id,name,email',
+                'provider:id,business_name,business_slug',
+                'service:id,name,slug',
+                'package:id,name,slug,price,duration_minutes',
+            ]),
         ], 201);
     }
 
@@ -492,20 +479,18 @@ class BookingController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can access provider bookings.',
+                'message' => 'Only service provider accounts can access provider bookings.',
             ], 403);
         }
 
         $provider =
             $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found.',
+                'message' => 'Business profile not found.',
             ], 404);
         }
 
@@ -526,11 +511,9 @@ class BookingController extends Controller
             ->get();
 
         return response()->json([
-            'message' =>
-                'Provider bookings loaded successfully.',
+            'message' => 'Provider bookings loaded successfully.',
 
-            'bookings' =>
-                $bookings,
+            'bookings' => $bookings,
         ]);
     }
 
@@ -544,20 +527,18 @@ class BookingController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can access provider bookings.',
+                'message' => 'Only service provider accounts can access provider bookings.',
             ], 403);
         }
 
         $provider =
             $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found.',
+                'message' => 'Business profile not found.',
             ], 404);
         }
 
@@ -573,19 +554,16 @@ class BookingController extends Controller
             ])
             ->first();
 
-        if (!$booking) {
+        if (! $booking) {
             return response()->json([
-                'message' =>
-                    'Booking not found.',
+                'message' => 'Booking not found.',
             ], 404);
         }
 
         return response()->json([
-            'message' =>
-                'Provider booking loaded successfully.',
+            'message' => 'Provider booking loaded successfully.',
 
-            'booking' =>
-                $booking,
+            'booking' => $booking,
         ]);
     }
 
@@ -598,27 +576,24 @@ class BookingController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can accept bookings.',
+                'message' => 'Only service provider accounts can accept bookings.',
             ], 403);
         }
 
         $provider =
             $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found.',
+                'message' => 'Business profile not found.',
             ], 404);
         }
 
-        if (!$provider->is_active) {
+        if (! $provider->is_active) {
             return response()->json([
-                'message' =>
-                    'Your provider account is inactive and cannot manage bookings.',
+                'message' => 'Your provider account is inactive and cannot manage bookings.',
             ], 403);
         }
 
@@ -627,41 +602,13 @@ class BookingController extends Controller
             'verified'
         ) {
             return response()->json([
-                'message' =>
-                    'Your business must be verified before managing bookings.',
+                'message' => 'Your business must be verified before managing bookings.',
             ], 403);
         }
 
         /*
          * Provider can only find their own booking.
          */
-        $booking = $provider->bookings()
-            ->where(
-                'id',
-                $id
-            )
-            ->first();
-
-        if (!$booking) {
-            return response()->json([
-                'message' =>
-                    'Booking not found.',
-            ], 404);
-        }
-
-        /*
-         * Only a pending booking can be accepted.
-         */
-        if (
-            $booking->booking_status !==
-            'pending'
-        ) {
-            return response()->json([
-                'message' =>
-                    'Only pending bookings can be accepted.',
-            ], 422);
-        }
-
         $validated = $request->validate([
             'provider_notes' => [
                 'nullable',
@@ -670,34 +617,53 @@ class BookingController extends Controller
             ],
         ]);
 
-        $booking->booking_status =
-            'accepted';
-
-        $booking->accepted_at =
-            now();
-
-        if (
-            array_key_exists(
-                'provider_notes',
-                $validated
-            )
+        $booking = DB::transaction(function () use (
+            $provider,
+            $id,
+            $validated
         ) {
-            $booking->provider_notes =
-                $validated['provider_notes'];
+            $booking = Booking::query()
+                ->where('id', $id)
+                ->where('service_provider_id', $provider->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $booking) {
+                return response()->json([
+                    'message' => 'Booking not found.',
+                ], 404);
+            }
+
+            if ($booking->booking_status !== 'pending') {
+                return response()->json([
+                    'message' => 'Only pending bookings can be accepted.',
+                ], 422);
+            }
+
+            $booking->booking_status = 'accepted';
+            $booking->accepted_at = now();
+
+            if (array_key_exists('provider_notes', $validated)) {
+                $booking->provider_notes = $validated['provider_notes'];
+            }
+
+            $booking->save();
+
+            return $booking;
+        });
+
+        if ($booking instanceof JsonResponse) {
+            return $booking;
         }
 
-        $booking->save();
-
         return response()->json([
-            'message' =>
-                'Booking accepted successfully.',
+            'message' => 'Booking accepted successfully.',
 
-            'booking' =>
-                $booking->load([
-                    'customer:id,name,email',
-                    'service:id,name,slug',
-                    'package:id,name,slug,price,duration_minutes',
-                ]),
+            'booking' => $booking->load([
+                'customer:id,name,email',
+                'service:id,name,slug',
+                'package:id,name,slug,price,duration_minutes',
+            ]),
         ]);
     }
 
@@ -710,27 +676,24 @@ class BookingController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can reject bookings.',
+                'message' => 'Only service provider accounts can reject bookings.',
             ], 403);
         }
 
         $provider =
             $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found.',
+                'message' => 'Business profile not found.',
             ], 404);
         }
 
-        if (!$provider->is_active) {
+        if (! $provider->is_active) {
             return response()->json([
-                'message' =>
-                    'Your provider account is inactive and cannot manage bookings.',
+                'message' => 'Your provider account is inactive and cannot manage bookings.',
             ], 403);
         }
 
@@ -739,36 +702,8 @@ class BookingController extends Controller
             'verified'
         ) {
             return response()->json([
-                'message' =>
-                    'Your business must be verified before managing bookings.',
+                'message' => 'Your business must be verified before managing bookings.',
             ], 403);
-        }
-
-        $booking = $provider->bookings()
-            ->where(
-                'id',
-                $id
-            )
-            ->first();
-
-        if (!$booking) {
-            return response()->json([
-                'message' =>
-                    'Booking not found.',
-            ], 404);
-        }
-
-        /*
-         * Only pending bookings may be rejected.
-         */
-        if (
-            $booking->booking_status !==
-            'pending'
-        ) {
-            return response()->json([
-                'message' =>
-                    'Only pending bookings can be rejected.',
-            ], 422);
         }
 
         $validated = $request->validate([
@@ -779,31 +714,52 @@ class BookingController extends Controller
             ],
         ]);
 
-        $booking->booking_status =
-            'rejected';
-
-        if (
-            array_key_exists(
-                'provider_notes',
-                $validated
-            )
+        $booking = DB::transaction(function () use (
+            $provider,
+            $id,
+            $validated
         ) {
-            $booking->provider_notes =
-                $validated['provider_notes'];
+            $booking = Booking::query()
+                ->where('id', $id)
+                ->where('service_provider_id', $provider->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $booking) {
+                return response()->json([
+                    'message' => 'Booking not found.',
+                ], 404);
+            }
+
+            if ($booking->booking_status !== 'pending') {
+                return response()->json([
+                    'message' => 'Only pending bookings can be rejected.',
+                ], 422);
+            }
+
+            $booking->booking_status = 'rejected';
+
+            if (array_key_exists('provider_notes', $validated)) {
+                $booking->provider_notes = $validated['provider_notes'];
+            }
+
+            $booking->save();
+
+            return $booking;
+        });
+
+        if ($booking instanceof JsonResponse) {
+            return $booking;
         }
 
-        $booking->save();
-
         return response()->json([
-            'message' =>
-                'Booking rejected successfully.',
+            'message' => 'Booking rejected successfully.',
 
-            'booking' =>
-                $booking->load([
-                    'customer:id,name,email',
-                    'service:id,name,slug',
-                    'package:id,name,slug,price,duration_minutes',
-                ]),
+            'booking' => $booking->load([
+                'customer:id,name,email',
+                'service:id,name,slug',
+                'package:id,name,slug,price,duration_minutes',
+            ]),
         ]);
     }
 
@@ -816,27 +772,24 @@ class BookingController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can complete bookings.',
+                'message' => 'Only service provider accounts can complete bookings.',
             ], 403);
         }
 
         $provider =
             $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found.',
+                'message' => 'Business profile not found.',
             ], 404);
         }
 
-        if (!$provider->is_active) {
+        if (! $provider->is_active) {
             return response()->json([
-                'message' =>
-                    'Your provider account is inactive and cannot manage bookings.',
+                'message' => 'Your provider account is inactive and cannot manage bookings.',
             ], 403);
         }
 
@@ -845,8 +798,7 @@ class BookingController extends Controller
             'verified'
         ) {
             return response()->json([
-                'message' =>
-                    'Your business must be verified before managing bookings.',
+                'message' => 'Your business must be verified before managing bookings.',
             ], 403);
         }
 
@@ -863,10 +815,9 @@ class BookingController extends Controller
             )
             ->first();
 
-        if (!$booking) {
+        if (! $booking) {
             return response()->json([
-                'message' =>
-                    'Booking not found.',
+                'message' => 'Booking not found.',
             ], 404);
         }
 
@@ -881,8 +832,7 @@ class BookingController extends Controller
             'confirmed'
         ) {
             return response()->json([
-                'message' =>
-                    'Only confirmed bookings can be completed.',
+                'message' => 'Only confirmed bookings can be completed.',
             ], 422);
         }
 
@@ -892,8 +842,7 @@ class BookingController extends Controller
          */
         if ($booking->event_date->isFuture()) {
             return response()->json([
-                'message' =>
-                    'A booking cannot be completed before its event date.',
+                'message' => 'A booking cannot be completed before its event date.',
             ], 422);
         }
 
@@ -906,15 +855,13 @@ class BookingController extends Controller
         $booking->save();
 
         return response()->json([
-            'message' =>
-                'Booking completed successfully.',
+            'message' => 'Booking completed successfully.',
 
-            'booking' =>
-                $booking->load([
-                    'customer:id,name,email',
-                    'service:id,name,slug',
-                    'package:id,name,slug,price,duration_minutes',
-                ]),
+            'booking' => $booking->load([
+                'customer:id,name,email',
+                'service:id,name,slug',
+                'package:id,name,slug,price,duration_minutes',
+            ]),
         ]);
     }
 
@@ -929,9 +876,9 @@ class BookingController extends Controller
     {
         do {
             $reference =
-                'BK-' .
-                now()->format('Ymd') .
-                '-' .
+                'BK-'.
+                now()->format('Ymd').
+                '-'.
                 Str::upper(
                     Str::random(6)
                 );

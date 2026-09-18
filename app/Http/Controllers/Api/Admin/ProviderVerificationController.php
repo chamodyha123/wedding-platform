@@ -7,7 +7,6 @@ use App\Models\ProviderVerificationHistory;
 use App\Models\ServiceProvider;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Validation\Rule;
 
 class ProviderVerificationController extends Controller
 {
@@ -44,7 +43,7 @@ class ProviderVerificationController extends Controller
             'verificationHistory.admin:id,name,email',
         ])->find($id);
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
                 'message' => 'Service provider not found.',
             ], 404);
@@ -115,41 +114,55 @@ class ProviderVerificationController extends Controller
             'notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        $provider = ServiceProvider::find($id);
+        $provider = DB::transaction(function () use (
+            $request,
+            $id,
+            $newStatus
+        ) {
+            $provider = ServiceProvider::query()
+                ->where('id', $id)
+                ->lockForUpdate()
+                ->first();
 
-        if (!$provider) {
-            return response()->json([
-                'message' => 'Service provider not found.',
-            ], 404);
+            if (! $provider) {
+                return response()->json([
+                    'message' => 'Service provider not found.',
+                ], 404);
+            }
+
+            $previousStatus = $provider->verification_status;
+
+            if ($previousStatus === $newStatus) {
+                return response()->json([
+                    'message' => "Provider is already {$newStatus}.",
+                ], 422);
+            }
+
+            $provider->update([
+                'verification_status' => $newStatus,
+                'verification_notes' => $request->input('notes'),
+                'verified_at' => $newStatus === 'verified'
+                    ? now()
+                    : null,
+                'verified_by' => $newStatus === 'verified'
+                    ? $request->user()->id
+                    : null,
+            ]);
+
+            ProviderVerificationHistory::create([
+                'service_provider_id' => $provider->id,
+                'admin_id' => $request->user()->id,
+                'previous_status' => $previousStatus,
+                'new_status' => $newStatus,
+                'notes' => $request->input('notes'),
+            ]);
+
+            return $provider;
+        });
+
+        if ($provider instanceof JsonResponse) {
+            return $provider;
         }
-
-        $previousStatus = $provider->verification_status;
-
-        // Prevent unnecessary status changes.
-        if ($previousStatus === $newStatus) {
-            return response()->json([
-                'message' => "Provider is already {$newStatus}.",
-            ], 422);
-        }
-
-        $provider->update([
-            'verification_status' => $newStatus,
-            'verification_notes' => $request->input('notes'),
-            'verified_at' => $newStatus === 'verified'
-                ? now()
-                : null,
-            'verified_by' => $newStatus === 'verified'
-                ? $request->user()->id
-                : null,
-        ]);
-
-        ProviderVerificationHistory::create([
-            'service_provider_id' => $provider->id,
-            'admin_id' => $request->user()->id,
-            'previous_status' => $previousStatus,
-            'new_status' => $newStatus,
-            'notes' => $request->input('notes'),
-        ]);
 
         return response()->json([
             'message' => "Provider {$newStatus} successfully.",

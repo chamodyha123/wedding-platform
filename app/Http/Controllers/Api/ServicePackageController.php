@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ServicePackage;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -20,19 +21,17 @@ class ServicePackageController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can access packages.',
+                'message' => 'Only service provider accounts can access packages.',
             ], 403);
         }
 
         $provider = $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
@@ -42,11 +41,12 @@ class ServicePackageController extends Controller
          * We search for the service through the
          * authenticated provider.
          */
+
         $service = $provider->services()
             ->where('id', $serviceId)
             ->first();
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'message' => 'Service not found.',
             ], 404);
@@ -77,33 +77,29 @@ class ServicePackageController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can create packages.',
+                'message' => 'Only service provider accounts can create packages.',
             ], 403);
         }
 
         $provider = $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
-        if (!$provider->is_active) {
+        if (! $provider->is_active) {
             return response()->json([
-                'message' =>
-                    'Your provider account is inactive and cannot create packages.',
+                'message' => 'Your provider account is inactive and cannot create packages.',
             ], 403);
         }
 
         if ($provider->verification_status !== 'verified') {
             return response()->json([
-                'message' =>
-                    'Your business must be verified before you can create packages.',
+                'message' => 'Your business must be verified before you can create packages.',
             ], 403);
         }
 
@@ -114,7 +110,7 @@ class ServicePackageController extends Controller
             ->where('id', $serviceId)
             ->first();
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'message' => 'Service not found.',
             ], 404);
@@ -152,37 +148,43 @@ class ServicePackageController extends Controller
             ],
         ]);
 
-        $package = ServicePackage::create([
-            'service_id' => $service->id,
+        for ($attempt = 0; $attempt < 3; $attempt++) {
+            try {
+                $package = ServicePackage::create([
+                    'service_id' => $service->id,
 
-            'name' => $validated['name'],
+                    'name' => $validated['name'],
 
-            'slug' => $this->generateUniqueSlug(
-                $service->id,
-                $validated['name']
-            ),
+                    'slug' => $this->generateUniqueSlug(
+                        $service->id,
+                        $validated['name']
+                    ),
 
-            'description' =>
-                $validated['description'] ?? null,
+                    'description' => $validated['description'] ?? null,
 
-            'price' => $validated['price'],
+                    'price' => $validated['price'],
 
-            'duration_minutes' =>
-                $validated['duration_minutes'] ?? null,
+                    'duration_minutes' => $validated['duration_minutes'] ?? null,
 
-            'status' =>
-                $validated['status'] ?? 'draft',
+                    'status' => $validated['status'] ?? 'draft',
 
-            /*
+                    /*
              * Providers cannot feature their
              * own packages directly.
              */
-            'is_featured' => false,
-        ]);
+                    'is_featured' => false,
+                ]);
+
+                break;
+            } catch (QueryException $exception) {
+                if ($exception->getCode() !== '23505' || $attempt === 2) {
+                    throw $exception;
+                }
+            }
+        }
 
         return response()->json([
-            'message' =>
-                'Service package created successfully.',
+            'message' => 'Service package created successfully.',
 
             'package' => $package->load([
                 'service:id,name,slug',
@@ -201,19 +203,17 @@ class ServicePackageController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can access packages.',
+                'message' => 'Only service provider accounts can access packages.',
             ], 403);
         }
 
         $provider = $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
@@ -221,7 +221,7 @@ class ServicePackageController extends Controller
             ->where('id', $serviceId)
             ->first();
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'message' => 'Service not found.',
             ], 404);
@@ -237,7 +237,7 @@ class ServicePackageController extends Controller
             ->where('id', $packageId)
             ->first();
 
-        if (!$package) {
+        if (! $package) {
             return response()->json([
                 'message' => 'Service package not found.',
             ], 404);
@@ -260,33 +260,29 @@ class ServicePackageController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can update packages.',
+                'message' => 'Only service provider accounts can update packages.',
             ], 403);
         }
 
         $provider = $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
-        if (!$provider->is_active) {
+        if (! $provider->is_active) {
             return response()->json([
-                'message' =>
-                    'Your provider account is inactive and cannot update packages.',
+                'message' => 'Your provider account is inactive and cannot update packages.',
             ], 403);
         }
 
         if ($provider->verification_status !== 'verified') {
             return response()->json([
-                'message' =>
-                    'Your business must be verified before you can update packages.',
+                'message' => 'Your business must be verified before you can update packages.',
             ], 403);
         }
 
@@ -294,7 +290,7 @@ class ServicePackageController extends Controller
             ->where('id', $serviceId)
             ->first();
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'message' => 'Service not found.',
             ], 404);
@@ -304,7 +300,7 @@ class ServicePackageController extends Controller
             ->where('id', $packageId)
             ->first();
 
-        if (!$package) {
+        if (! $package) {
             return response()->json([
                 'message' => 'Service package not found.',
             ], 404);
@@ -367,8 +363,7 @@ class ServicePackageController extends Controller
         $package->save();
 
         return response()->json([
-            'message' =>
-                'Service package updated successfully.',
+            'message' => 'Service package updated successfully.',
 
             'package' => $package->load([
                 'service:id,name,slug',
@@ -386,26 +381,29 @@ class ServicePackageController extends Controller
     ): JsonResponse {
         $user = $request->user();
 
-        if (!$user->hasRole('service_provider')) {
+        if (! $user->hasRole('service_provider')) {
             return response()->json([
-                'message' =>
-                    'Only service provider accounts can delete packages.',
+                'message' => 'Only service provider accounts can delete packages.',
             ], 403);
         }
 
         $provider = $user->serviceProvider()->first();
 
-        if (!$provider) {
+        if (! $provider) {
             return response()->json([
-                'message' =>
-                    'Business profile not found. Please create your business profile first.',
+                'message' => 'Business profile not found. Please create your business profile first.',
             ], 404);
         }
 
-        if (!$provider->is_active) {
+        if (! $provider->is_active) {
             return response()->json([
-                'message' =>
-                    'Your provider account is inactive and cannot delete packages.',
+                'message' => 'Your provider account is inactive and cannot delete packages.',
+            ], 403);
+        }
+
+        if ($provider->verification_status !== 'verified') {
+            return response()->json([
+                'message' => 'Your business must be verified before you can delete packages.',
             ], 403);
         }
 
@@ -413,7 +411,7 @@ class ServicePackageController extends Controller
             ->where('id', $serviceId)
             ->first();
 
-        if (!$service) {
+        if (! $service) {
             return response()->json([
                 'message' => 'Service not found.',
             ], 404);
@@ -423,7 +421,7 @@ class ServicePackageController extends Controller
             ->where('id', $packageId)
             ->first();
 
-        if (!$package) {
+        if (! $package) {
             return response()->json([
                 'message' => 'Service package not found.',
             ], 404);
@@ -437,8 +435,7 @@ class ServicePackageController extends Controller
         $package->delete();
 
         return response()->json([
-            'message' =>
-                'Service package deleted successfully.',
+            'message' => 'Service package deleted successfully.',
         ]);
     }
 
@@ -482,13 +479,13 @@ class ServicePackageController extends Controller
                 );
             }
 
-            if (!$query->exists()) {
+            if (! $query->exists()) {
                 break;
             }
 
             $slug =
-                $originalSlug .
-                '-' .
+                $originalSlug.
+                '-'.
                 $counter;
 
             $counter++;
