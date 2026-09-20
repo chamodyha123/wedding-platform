@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Admin\ProviderVerificationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
+use App\Http\Controllers\Api\MarketplaceController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ServiceAvailabilityController;
 use App\Http\Controllers\Api\ServiceController;
@@ -40,6 +41,44 @@ Route::prefix('auth')->group(function () {
             'logout',
         ]);
     });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Public Marketplace Routes
+|--------------------------------------------------------------------------
+|
+| These routes are public and read-only.
+| They do not require authentication or provider/admin roles.
+|
+*/
+
+Route::prefix('marketplace')->group(function () {
+
+    Route::get('/categories', [
+        MarketplaceController::class,
+        'categories',
+    ]);
+
+    Route::get('/providers', [
+        MarketplaceController::class,
+        'providers',
+    ]);
+
+    Route::get('/providers/{slug}', [
+        MarketplaceController::class,
+        'provider',
+    ]);
+
+    Route::get('/services', [
+        MarketplaceController::class,
+        'services',
+    ]);
+
+    Route::get('/services/{slug}', [
+        MarketplaceController::class,
+        'service',
+    ]);
 });
 
 /*
