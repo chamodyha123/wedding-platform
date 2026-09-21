@@ -97,6 +97,8 @@ class MarketplaceController extends Controller
             ])
             ->where('verification_status', 'verified')
             ->where('is_active', true)
+            ->withCount('reviews')
+            ->withAvg('reviews', 'rating')
             ->with([
                 'categories' => function ($categoryQuery) {
                     $categoryQuery
@@ -170,6 +172,10 @@ class MarketplaceController extends Controller
             )
             ->withQueryString();
 
+        $providers->through(
+            fn (ServiceProvider $provider): array => $this->providerData($provider)
+        );
+
         return response()->json($providers);
     }
 
@@ -209,6 +215,8 @@ class MarketplaceController extends Controller
                 'is_active',
                 true
             )
+            ->withCount('reviews')
+            ->withAvg('reviews', 'rating')
             ->with([
                 'categories' => function ($categoryQuery) {
                     $categoryQuery
@@ -276,7 +284,7 @@ class MarketplaceController extends Controller
         }
 
         return response()->json([
-            'provider' => $provider,
+            'provider' => $this->providerData($provider),
         ]);
     }
 
@@ -396,6 +404,8 @@ class MarketplaceController extends Controller
                 'status',
                 'published'
             )
+            ->withCount('reviews')
+            ->withAvg('reviews', 'rating')
             ->whereHas(
                 'provider',
                 function ($providerQuery) {
@@ -673,6 +683,10 @@ class MarketplaceController extends Controller
             )
             ->withQueryString();
 
+        $services->through(
+            fn (Service $service): array => $this->serviceData($service)
+        );
+
         return response()->json($services);
     }
 
@@ -703,6 +717,8 @@ class MarketplaceController extends Controller
                 'name',
                 'slug',
             ])
+            ->withCount('reviews')
+            ->withAvg('reviews', 'rating')
             ->where(
                 'slug',
                 $slug
@@ -784,7 +800,12 @@ class MarketplaceController extends Controller
         });
 
         return response()->json([
-            'service' => $service,
+            'service' => [
+                'id' => $service->id,
+                'name' => $service->name,
+                'slug' => $service->slug,
+            ],
+            'rating_summary' => $this->ratingSummary($service),
             'reviews' => $reviews,
         ]);
     }
@@ -815,6 +836,8 @@ class MarketplaceController extends Controller
                 'status',
                 'published'
             )
+            ->withCount('reviews')
+            ->withAvg('reviews', 'rating')
             ->whereHas(
                 'provider',
                 function ($providerQuery) {
@@ -894,7 +917,63 @@ class MarketplaceController extends Controller
         }
 
         return response()->json([
-            'service' => $service,
+            'service' => $this->serviceData($service),
         ]);
+    }
+
+    /**
+     * Build a public service response with normalized rating statistics.
+     */
+    private function serviceData(Service $service): array
+    {
+        $data = $service->toArray();
+
+        unset($data['reviews_avg_rating']);
+
+        $data['reviews_count'] = (int) ($service->reviews_count ?? 0);
+        $data['average_rating'] = $this->normalizeAverageRating(
+            $service->reviews_avg_rating ?? null
+        );
+
+        return $data;
+    }
+
+    /**
+     * Build a public provider response with normalized rating statistics.
+     */
+    private function providerData(ServiceProvider $provider): array
+    {
+        $data = $provider->toArray();
+
+        unset($data['reviews_avg_rating']);
+
+        $data['reviews_count'] = (int) ($provider->reviews_count ?? 0);
+        $data['average_rating'] = $this->normalizeAverageRating(
+            $provider->reviews_avg_rating ?? null
+        );
+
+        return $data;
+    }
+
+    /**
+     * Return a normalized rating summary for a service or provider.
+     */
+    private function ratingSummary(Service|ServiceProvider $model): array
+    {
+        return [
+            'reviews_count' => (int) ($model->reviews_count ?? 0),
+            'average_rating' => $this->normalizeAverageRating(
+                $model->reviews_avg_rating ?? null
+            ),
+        ];
+    }
+
+    private function normalizeAverageRating(mixed $averageRating): ?float
+    {
+        if ($averageRating === null) {
+            return null;
+        }
+
+        return round((float) $averageRating, 2);
     }
 }

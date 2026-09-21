@@ -448,7 +448,9 @@ class ServiceProviderController extends Controller
             ->withCount([
                 'services',
                 'bookings',
+                'reviews',
             ])
+            ->withAvg('reviews', 'rating')
             ->first();
 
         if (! $provider) {
@@ -531,10 +533,11 @@ class ServiceProviderController extends Controller
 
                     'bookings_count' => $provider->bookings_count,
 
-                    /*
-                     * Reviews are not implemented yet.
-                     */
-                    'reviews_count' => 0,
+                    'reviews_count' => (int) $provider->reviews_count,
+
+                    'average_rating' => $provider->reviews_avg_rating === null
+                        ? null
+                        : round((float) $provider->reviews_avg_rating, 2),
                 ],
             ],
         ]);
