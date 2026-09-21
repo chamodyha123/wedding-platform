@@ -76,6 +76,11 @@ Route::prefix('marketplace')->group(function () {
         'services',
     ]);
 
+    Route::get('/services/{slug}/reviews', [
+        MarketplaceController::class,
+        'serviceReviews',
+    ]);
+
     Route::get('/services/{slug}', [
         MarketplaceController::class,
         'service',
@@ -257,6 +262,22 @@ Route::middleware([
         Route::get('/dashboard', [
             ServiceProviderController::class,
             'dashboard',
+        ]);
+
+        /*
+        |--------------------------------------------------------------------------
+        | Provider Reviews
+        |--------------------------------------------------------------------------
+        */
+
+        Route::get('/reviews', [
+            ReviewController::class,
+            'providerIndex',
+        ]);
+
+        Route::get('/reviews/{id}', [
+            ReviewController::class,
+            'providerShow',
         ]);
 
         /*

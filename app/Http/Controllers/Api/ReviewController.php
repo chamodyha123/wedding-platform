@@ -237,6 +237,140 @@ class ReviewController extends Controller
     }
 
     /**
+     * List reviews for the authenticated service provider.
+     */
+    public function providerIndex(Request $request): JsonResponse
+    {
+        $provider = $request->user()->serviceProvider()->first();
+
+        if (! $provider) {
+            return response()->json([
+                'message' => 'Business profile not found.',
+            ], 404);
+        }
+
+        $validated = $request->validate([
+            'rating' => [
+                'sometimes',
+                'integer',
+                'between:1,5',
+            ],
+
+            'service_id' => [
+                'sometimes',
+                'integer',
+                'min:1',
+            ],
+
+            'per_page' => [
+                'sometimes',
+                'integer',
+                'min:1',
+                'max:100',
+            ],
+        ]);
+
+        $reviews = Review::query()
+            ->where(
+                'service_provider_id',
+                $provider->id
+            )
+            ->select([
+                'id',
+                'booking_id',
+                'customer_id',
+                'service_id',
+                'rating',
+                'comment',
+                'created_at',
+                'updated_at',
+            ])
+            ->with([
+                'customer:id,name',
+                'service:id,name,slug',
+            ])
+            ->when(
+                array_key_exists('rating', $validated),
+                function ($reviewQuery) use ($validated) {
+                    $reviewQuery->where(
+                        'rating',
+                        $validated['rating']
+                    );
+                }
+            )
+            ->when(
+                array_key_exists('service_id', $validated),
+                function ($reviewQuery) use ($validated) {
+                    $reviewQuery->where(
+                        'service_id',
+                        $validated['service_id']
+                    );
+                }
+            )
+            ->latest()
+            ->paginate(
+                $validated['per_page'] ?? 15
+            )
+            ->withQueryString();
+
+        $reviews->through(
+            fn (Review $review): array => $this->providerReviewData($review)
+        );
+
+        return response()->json([
+            'reviews' => $reviews,
+        ]);
+    }
+
+    /**
+     * Show one review belonging to the authenticated service provider.
+     */
+    public function providerShow(
+        Request $request,
+        int $id
+    ): JsonResponse {
+        $provider = $request->user()->serviceProvider()->first();
+
+        if (! $provider) {
+            return response()->json([
+                'message' => 'Business profile not found.',
+            ], 404);
+        }
+
+        $review = Review::query()
+            ->whereKey($id)
+            ->where(
+                'service_provider_id',
+                $provider->id
+            )
+            ->select([
+                'id',
+                'booking_id',
+                'customer_id',
+                'service_id',
+                'rating',
+                'comment',
+                'created_at',
+                'updated_at',
+            ])
+            ->with([
+                'customer:id,name',
+                'service:id,name,slug',
+            ])
+            ->first();
+
+        if (! $review) {
+            return response()->json([
+                'message' => 'Review not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'review' => $this->providerReviewData($review),
+        ]);
+    }
+
+    /**
      * Find a review belonging to the authenticated customer.
      */
     private function findCustomerReview(
@@ -294,6 +428,40 @@ class ReviewController extends Controller
                     'id' => $review->provider->id,
                     'business_name' => $review->provider->business_name,
                     'business_slug' => $review->provider->business_slug,
+                ]
+                : null,
+        ];
+    }
+
+    /**
+     * Build the safe provider API representation of a review.
+     */
+    private function providerReviewData(Review $review): array
+    {
+        return [
+            'id' => $review->id,
+            'booking_id' => $review->booking_id,
+            'customer_id' => $review->customer_id,
+            'service_id' => $review->service_id,
+            'rating' => $review->rating,
+            'comment' => $review->comment,
+            'created_at' => $review->created_at,
+            'updated_at' => $review->updated_at,
+
+            'customer' => $review->relationLoaded('customer')
+                && $review->customer
+                ? [
+                    'id' => $review->customer->id,
+                    'name' => $review->customer->name,
+                ]
+                : null,
+
+            'service' => $review->relationLoaded('service')
+                && $review->service
+                ? [
+                    'id' => $review->service->id,
+                    'name' => $review->service->name,
+                    'slug' => $review->service->slug,
                 ]
                 : null,
         ];
