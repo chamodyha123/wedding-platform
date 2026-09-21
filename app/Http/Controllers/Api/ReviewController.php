@@ -475,14 +475,22 @@ class ReviewController extends Controller
         QueryException $exception
     ): bool {
         $sqlState = $exception->errorInfo[0] ?? null;
+        $message = strtolower($exception->getMessage());
 
-        return in_array(
-            $sqlState,
-            [
-                '23000', // SQLite / MySQL integrity constraint violation
-                '23505', // PostgreSQL unique violation
-            ],
-            true
-        );
+        if ($sqlState === '23505') {
+            return str_contains($message, 'booking_id')
+                || str_contains($message, 'reviews_booking_id_unique');
+        }
+
+        if ($sqlState !== '23000') {
+            return false;
+        }
+
+        return str_contains($message, 'reviews.booking_id')
+            || str_contains($message, 'reviews_booking_id_unique')
+            || (
+                str_contains($message, 'duplicate entry')
+                && str_contains($message, 'booking')
+            );
     }
 }
