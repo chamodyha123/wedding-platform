@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Review;
 use App\Models\Service;
 use App\Models\ServiceCategory;
 use App\Models\ServiceProvider;
@@ -673,6 +674,119 @@ class MarketplaceController extends Controller
             ->withQueryString();
 
         return response()->json($services);
+    }
+
+    /**
+     * Return public reviews for one published service.
+     */
+    public function serviceReviews(Request $request, string $slug): JsonResponse
+    {
+        $validated = $request->validate([
+            'rating' => [
+                'sometimes',
+                'integer',
+                'min:1',
+                'max:5',
+            ],
+
+            'per_page' => [
+                'sometimes',
+                'integer',
+                'min:1',
+                'max:100',
+            ],
+        ]);
+
+        $service = Service::query()
+            ->select([
+                'id',
+                'name',
+                'slug',
+            ])
+            ->where(
+                'slug',
+                $slug
+            )
+            ->where(
+                'status',
+                'published'
+            )
+            ->whereHas(
+                'provider',
+                function ($providerQuery) {
+                    $providerQuery
+                        ->where(
+                            'verification_status',
+                            'verified'
+                        )
+                        ->where(
+                            'is_active',
+                            true
+                        );
+                }
+            )
+            ->whereHas(
+                'category',
+                function ($categoryQuery) {
+                    $categoryQuery
+                        ->where(
+                            'is_active',
+                            true
+                        );
+                }
+            )
+            ->first();
+
+        if (! $service) {
+            return response()->json([
+                'message' => 'Service not found.',
+            ], 404);
+        }
+
+        $reviews = $service->reviews()
+            ->select([
+                'id',
+                'service_id',
+                'customer_id',
+                'rating',
+                'comment',
+                'created_at',
+                'updated_at',
+            ])
+            ->with('customer:id,name')
+            ->when(
+                array_key_exists('rating', $validated),
+                function ($reviewQuery) use ($validated) {
+                    $reviewQuery->where(
+                        'rating',
+                        $validated['rating']
+                    );
+                }
+            )
+            ->latest()
+            ->paginate(
+                $validated['per_page'] ?? 10
+            )
+            ->withQueryString();
+
+        $reviews->through(function (Review $review): array {
+            return [
+                'id' => $review->id,
+                'rating' => $review->rating,
+                'comment' => $review->comment,
+                'created_at' => $review->created_at,
+                'updated_at' => $review->updated_at,
+                'customer' => [
+                    'id' => $review->customer->id,
+                    'name' => $review->customer->name,
+                ],
+            ];
+        });
+
+        return response()->json([
+            'service' => $service,
+            'reviews' => $reviews,
+        ]);
     }
 
     /**

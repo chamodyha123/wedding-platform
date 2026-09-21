@@ -65,4 +65,15 @@ class User extends Authenticatable
             'customer_id'
         );
     }
+
+    /**
+     * Reviews submitted by this user as a customer.
+     */
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(
+            Review::class,
+            'customer_id'
+        );
+    }
 }

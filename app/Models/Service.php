@@ -91,4 +91,15 @@ class Service extends Model
             'service_id'
         );
     }
+
+    /**
+     * Reviews submitted for this service.
+     */
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(
+            Review::class,
+            'service_id'
+        );
+    }
 }
