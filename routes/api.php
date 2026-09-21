@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\ServicePackageController;
 use App\Http\Controllers\Api\ServiceProviderController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\ReviewController;
 
 /*
 |--------------------------------------------------------------------------
@@ -118,6 +119,37 @@ Route::middleware([
         Route::post('/bookings/{id}/cancel', [
             BookingController::class,
             'cancel',
+        ]);
+
+                /*
+        |--------------------------------------------------------------------------
+        | Customer Reviews
+        |--------------------------------------------------------------------------
+        */
+
+        Route::post('/bookings/{bookingId}/reviews', [
+            ReviewController::class,
+            'store',
+        ]);
+
+        Route::get('/reviews', [
+            ReviewController::class,
+            'index',
+        ]);
+
+        Route::get('/reviews/{id}', [
+            ReviewController::class,
+            'show',
+        ]);
+
+        Route::put('/reviews/{id}', [
+            ReviewController::class,
+            'update',
+        ]);
+
+        Route::delete('/reviews/{id}', [
+            ReviewController::class,
+            'destroy',
         ]);
 
         /*

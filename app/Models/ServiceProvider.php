@@ -124,4 +124,15 @@ class ServiceProvider extends Model
             'service_provider_id'
         );
     }
+
+    /**
+     * Reviews received by this provider.
+     */
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(
+            Review::class,
+            'service_provider_id'
+        );
+    }
 }
