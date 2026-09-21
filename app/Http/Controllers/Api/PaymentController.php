@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\AdminPaymentResource;
 use App\Http\Resources\PaymentResource;
 use App\Http\Resources\ProviderPaymentResource;
 use App\Models\Booking;
@@ -14,6 +15,55 @@ use Illuminate\Support\Str;
 
 class PaymentController extends Controller
 {
+    /**
+     * List all marketplace payments for the authenticated administrator.
+     */
+    public function adminIndex(Request $request): JsonResponse
+    {
+        $payments = Payment::query()
+            ->with([
+                'booking.customer:id,name,email',
+                'booking.provider:id,business_name',
+                'booking.service:id,name,slug',
+                'booking.package:id,name,slug,price,duration_minutes',
+            ])
+            ->latest('id')
+            ->get();
+
+        return response()->json([
+            'message' => 'Admin payments loaded successfully.',
+            'payments' => $payments->map(
+                fn (Payment $payment): array => (new AdminPaymentResource($payment))->toArray($request)
+            )->values(),
+        ]);
+    }
+
+    /**
+     * Show one marketplace payment for the authenticated administrator.
+     */
+    public function adminShow(Request $request, int $id): JsonResponse
+    {
+        $payment = Payment::query()
+            ->whereKey($id)
+            ->with([
+                'booking.customer:id,name,email',
+                'booking.provider:id,business_name',
+                'booking.service:id,name,slug',
+                'booking.package:id,name,slug,price,duration_minutes',
+            ])
+            ->first();
+
+        if (! $payment) {
+            return response()->json([
+                'message' => 'Payment not found.',
+            ], 404);
+        }
+
+        return response()->json([
+            'payment' => (new AdminPaymentResource($payment))->toArray($request),
+        ]);
+    }
+
     /**
      * List payments for bookings owned by the authenticated provider.
      */
@@ -86,16 +136,12 @@ class PaymentController extends Controller
     /**
      * List payments belonging to the authenticated customer.
      */
-    public function index(
-        Request $request
-    ): JsonResponse {
+    public function index(Request $request): JsonResponse
+    {
         $user = $request->user();
 
         $payments = Payment::query()
-            ->where(
-                'customer_id',
-                $user->id
-            )
+            ->where('customer_id', $user->id)
             ->with([
                 'booking.service',
                 'booking.package',
@@ -113,21 +159,13 @@ class PaymentController extends Controller
     /**
      * Show a payment belonging to the authenticated customer.
      */
-    public function show(
-        Request $request,
-        int $id
-    ): JsonResponse {
+    public function show(Request $request, int $id): JsonResponse
+    {
         $user = $request->user();
 
         $payment = Payment::query()
-            ->where(
-                'id',
-                $id
-            )
-            ->where(
-                'customer_id',
-                $user->id
-            )
+            ->where('id', $id)
+            ->where('customer_id', $user->id)
             ->with([
                 'booking.service',
                 'booking.package',
@@ -148,10 +186,8 @@ class PaymentController extends Controller
     /**
      * Start a payment attempt.
      */
-    public function store(
-        Request $request,
-        int $bookingId
-    ): JsonResponse {
+    public function store(Request $request, int $bookingId): JsonResponse
+    {
         $user = $request->user();
 
         if (! $user->hasRole('customer')) {
@@ -169,11 +205,7 @@ class PaymentController extends Controller
         ]);
 
         $result = DB::transaction(
-            function () use (
-                $user,
-                $bookingId,
-                $validated
-            ) {
+            function () use ($user, $bookingId, $validated) {
                 $booking = Booking::query()
                     ->where('id', $bookingId)
                     ->where('customer_id', $user->id)
@@ -223,27 +255,17 @@ class PaymentController extends Controller
 
                 $payment = Payment::create([
                     'booking_id' => $booking->id,
-
                     'customer_id' => $user->id,
-
                     'payment_reference' => $this->generatePaymentReference(),
-
                     'amount' => $booking->total_amount,
-
                     'currency' => 'LKR',
-
                     'payment_method' => $validated['payment_method'],
-
                     'status' => 'pending',
-
                     'gateway' => null,
-
                     'gateway_transaction_id' => null,
                 ]);
 
-                $booking->payment_status =
-                    'pending';
-
+                $booking->payment_status = 'pending';
                 $booking->save();
 
                 return [
@@ -264,7 +286,6 @@ class PaymentController extends Controller
 
         return response()->json([
             'message' => 'Payment initiated successfully.',
-
             'payment' => $result['payment']->load([
                 'booking:id,booking_reference,customer_id,total_amount,booking_status,payment_status',
             ]),
@@ -300,17 +321,10 @@ class PaymentController extends Controller
         }
 
         $result = DB::transaction(
-            function () use (
-                $user,
-                $bookingId,
-                $paymentId
-            ) {
+            function () use ($user, $bookingId, $paymentId) {
                 $booking = Booking::query()
                     ->where('id', $bookingId)
-                    ->where(
-                        'customer_id',
-                        $user->id
-                    )
+                    ->where('customer_id', $user->id)
                     ->lockForUpdate()
                     ->first();
 
@@ -324,14 +338,8 @@ class PaymentController extends Controller
 
                 $payment = Payment::query()
                     ->where('id', $paymentId)
-                    ->where(
-                        'booking_id',
-                        $booking->id
-                    )
-                    ->where(
-                        'customer_id',
-                        $user->id
-                    )
+                    ->where('booking_id', $booking->id)
+                    ->where('customer_id', $user->id)
                     ->lockForUpdate()
                     ->first();
 
@@ -351,16 +359,14 @@ class PaymentController extends Controller
                     ];
                 }
 
-                if (
-                    ! in_array(
-                        $payment->status,
-                        [
-                            'pending',
-                            'processing',
-                        ],
-                        true
-                    )
-                ) {
+                if (! in_array(
+                    $payment->status,
+                    [
+                        'pending',
+                        'processing',
+                    ],
+                    true
+                )) {
                     return [
                         'error' => true,
                         'status' => 422,
@@ -368,10 +374,7 @@ class PaymentController extends Controller
                     ];
                 }
 
-                if (
-                    $booking->booking_status !==
-                    'accepted'
-                ) {
+                if ($booking->booking_status !== 'accepted') {
                     return [
                         'error' => true,
                         'status' => 422,
@@ -379,10 +382,7 @@ class PaymentController extends Controller
                     ];
                 }
 
-                if (
-                    $booking->payment_status ===
-                    'paid'
-                ) {
+                if ($booking->payment_status === 'paid') {
                     return [
                         'error' => true,
                         'status' => 409,
@@ -406,31 +406,18 @@ class PaymentController extends Controller
 
                 $now = now();
 
-                $payment->status =
-                    'paid';
-
-                $payment->paid_at =
-                    $now;
-
-                $payment->failure_reason =
-                    null;
-
+                $payment->status = 'paid';
+                $payment->paid_at = $now;
+                $payment->failure_reason = null;
                 $payment->save();
 
-                $booking->payment_status =
-                    'paid';
-
-                $booking->booking_status =
-                    'confirmed';
-
-                $booking->confirmed_at =
-                    $now;
-
+                $booking->payment_status = 'paid';
+                $booking->booking_status = 'confirmed';
+                $booking->confirmed_at = $now;
                 $booking->save();
 
                 return [
                     'error' => false,
-
                     'payment' => $payment->fresh()->load([
                         'booking:id,booking_reference,customer_id,total_amount,booking_status,payment_status,confirmed_at',
                     ]),
@@ -446,7 +433,6 @@ class PaymentController extends Controller
 
         return response()->json([
             'message' => 'Payment completed successfully. Booking confirmed.',
-
             'payment' => $result['payment'],
         ]);
     }
@@ -478,18 +464,10 @@ class PaymentController extends Controller
         ]);
 
         $result = DB::transaction(
-            function () use (
-                $user,
-                $bookingId,
-                $paymentId,
-                $validated
-            ) {
+            function () use ($user, $bookingId, $paymentId, $validated) {
                 $booking = Booking::query()
                     ->where('id', $bookingId)
-                    ->where(
-                        'customer_id',
-                        $user->id
-                    )
+                    ->where('customer_id', $user->id)
                     ->lockForUpdate()
                     ->first();
 
@@ -503,14 +481,8 @@ class PaymentController extends Controller
 
                 $payment = Payment::query()
                     ->where('id', $paymentId)
-                    ->where(
-                        'booking_id',
-                        $booking->id
-                    )
-                    ->where(
-                        'customer_id',
-                        $user->id
-                    )
+                    ->where('booking_id', $booking->id)
+                    ->where('customer_id', $user->id)
                     ->lockForUpdate()
                     ->first();
 
@@ -530,16 +502,14 @@ class PaymentController extends Controller
                     ];
                 }
 
-                if (
-                    ! in_array(
-                        $payment->status,
-                        [
-                            'pending',
-                            'processing',
-                        ],
-                        true
-                    )
-                ) {
+                if (! in_array(
+                    $payment->status,
+                    [
+                        'pending',
+                        'processing',
+                    ],
+                    true
+                )) {
                     return [
                         'error' => true,
                         'status' => 422,
@@ -547,10 +517,7 @@ class PaymentController extends Controller
                     ];
                 }
 
-                if (
-                    $booking->booking_status !==
-                    'accepted'
-                ) {
+                if ($booking->booking_status !== 'accepted') {
                     return [
                         'error' => true,
                         'status' => 422,
@@ -558,30 +525,21 @@ class PaymentController extends Controller
                     ];
                 }
 
-                $payment->status =
-                    'failed';
-
+                $payment->status = 'failed';
                 $payment->failure_reason =
-                    $validated['failure_reason']
-                    ?? 'Payment failed.';
-
-                $payment->failed_at =
-                    now();
-
+                    $validated['failure_reason'] ?? 'Payment failed.';
+                $payment->failed_at = now();
                 $payment->save();
 
                 /*
                  * The booking remains accepted so
                  * another payment attempt can be made.
                  */
-                $booking->payment_status =
-                    'unpaid';
-
+                $booking->payment_status = 'unpaid';
                 $booking->save();
 
                 return [
                     'error' => false,
-
                     'payment' => $payment->fresh()->load([
                         'booking:id,booking_reference,customer_id,total_amount,booking_status,payment_status',
                     ]),
@@ -597,7 +555,6 @@ class PaymentController extends Controller
 
         return response()->json([
             'message' => 'Payment marked as failed. The booking can be paid again.',
-
             'payment' => $result['payment'],
         ]);
     }
@@ -619,17 +576,10 @@ class PaymentController extends Controller
         }
 
         $result = DB::transaction(
-            function () use (
-                $user,
-                $bookingId,
-                $paymentId
-            ) {
+            function () use ($user, $bookingId, $paymentId) {
                 $booking = Booking::query()
                     ->where('id', $bookingId)
-                    ->where(
-                        'customer_id',
-                        $user->id
-                    )
+                    ->where('customer_id', $user->id)
                     ->lockForUpdate()
                     ->first();
 
@@ -643,14 +593,8 @@ class PaymentController extends Controller
 
                 $payment = Payment::query()
                     ->where('id', $paymentId)
-                    ->where(
-                        'booking_id',
-                        $booking->id
-                    )
-                    ->where(
-                        'customer_id',
-                        $user->id
-                    )
+                    ->where('booking_id', $booking->id)
+                    ->where('customer_id', $user->id)
                     ->lockForUpdate()
                     ->first();
 
@@ -670,16 +614,14 @@ class PaymentController extends Controller
                     ];
                 }
 
-                if (
-                    ! in_array(
-                        $payment->status,
-                        [
-                            'pending',
-                            'processing',
-                        ],
-                        true
-                    )
-                ) {
+                if (! in_array(
+                    $payment->status,
+                    [
+                        'pending',
+                        'processing',
+                    ],
+                    true
+                )) {
                     return [
                         'error' => true,
                         'status' => 422,
@@ -687,10 +629,7 @@ class PaymentController extends Controller
                     ];
                 }
 
-                if (
-                    $booking->booking_status !==
-                    'accepted'
-                ) {
+                if ($booking->booking_status !== 'accepted') {
                     return [
                         'error' => true,
                         'status' => 422,
@@ -698,26 +637,19 @@ class PaymentController extends Controller
                     ];
                 }
 
-                $payment->status =
-                    'cancelled';
-
-                $payment->cancelled_at =
-                    now();
-
+                $payment->status = 'cancelled';
+                $payment->cancelled_at = now();
                 $payment->save();
 
                 /*
                  * Cancelling the payment attempt does
                  * not cancel the booking itself.
                  */
-                $booking->payment_status =
-                    'unpaid';
-
+                $booking->payment_status = 'unpaid';
                 $booking->save();
 
                 return [
                     'error' => false,
-
                     'payment' => $payment->fresh()->load([
                         'booking:id,booking_reference,customer_id,total_amount,booking_status,payment_status',
                     ]),
@@ -733,7 +665,6 @@ class PaymentController extends Controller
 
         return response()->json([
             'message' => 'Payment attempt cancelled. The booking can be paid again.',
-
             'payment' => $result['payment'],
         ]);
     }

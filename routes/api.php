@@ -427,3 +427,27 @@ Route::middleware([
             'suspend',
         ]);
     });
+
+/*
+|--------------------------------------------------------------------------
+| Admin Payment Routes
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware([
+    'auth:sanctum',
+    'role:admin',
+])
+    ->prefix('admin')
+    ->group(function () {
+
+        Route::get('/payments', [
+            PaymentController::class,
+            'adminIndex',
+        ]);
+
+        Route::get('/payments/{id}', [
+            PaymentController::class,
+            'adminShow',
+        ]);
+    });
