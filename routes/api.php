@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Admin\AdminBookingController;
 use App\Http\Controllers\Api\Admin\AdminCategoryController;
 use App\Http\Controllers\Api\Admin\AdminCustomerController;
 use App\Http\Controllers\Api\Admin\AdminDashboardController;
@@ -505,6 +506,9 @@ Route::middleware([
             AdminDashboardController::class,
             'dashboard',
         ]);
+
+        Route::get('/bookings', [AdminBookingController::class, 'index']);
+        Route::get('/bookings/{id}', [AdminBookingController::class, 'show']);
 
         Route::get('/customers', [AdminCustomerController::class, 'index']);
         Route::get('/customers/{id}', [AdminCustomerController::class, 'show']);
