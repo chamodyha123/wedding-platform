@@ -5,6 +5,8 @@ use App\Http\Controllers\Api\Admin\AdminCategoryController;
 use App\Http\Controllers\Api\Admin\AdminCustomerController;
 use App\Http\Controllers\Api\Admin\AdminDashboardController;
 use App\Http\Controllers\Api\Admin\AdminProviderController;
+use App\Http\Controllers\Api\Admin\AdminReportController;
+use App\Http\Controllers\Api\Admin\AdminReviewController;
 use App\Http\Controllers\Api\Admin\AdminServiceController;
 use App\Http\Controllers\Api\Admin\ProviderVerificationController;
 use App\Http\Controllers\Api\AuthController;
@@ -512,6 +514,10 @@ Route::middleware([
 
         Route::get('/customers', [AdminCustomerController::class, 'index']);
         Route::get('/customers/{id}', [AdminCustomerController::class, 'show']);
+
+        Route::get('/reviews', [AdminReviewController::class, 'index']);
+        Route::get('/reviews/{id}', [AdminReviewController::class, 'show']);
+        Route::get('/reports/overview', [AdminReportController::class, 'overview']);
 
         Route::get('/services', [AdminServiceController::class, 'index']);
         Route::get('/services/{id}', [AdminServiceController::class, 'show']);
