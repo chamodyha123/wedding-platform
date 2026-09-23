@@ -1,16 +1,21 @@
 <?php
 
+use App\Http\Controllers\Api\Admin\AdminCategoryController;
+use App\Http\Controllers\Api\Admin\AdminCustomerController;
+use App\Http\Controllers\Api\Admin\AdminDashboardController;
+use App\Http\Controllers\Api\Admin\AdminProviderController;
+use App\Http\Controllers\Api\Admin\AdminServiceController;
 use App\Http\Controllers\Api\Admin\ProviderVerificationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\MarketplaceController;
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\ServiceAvailabilityController;
 use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\ServicePackageController;
 use App\Http\Controllers\Api\ServiceProviderController;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\ReviewController;
 
 /*
 |--------------------------------------------------------------------------
@@ -126,7 +131,7 @@ Route::middleware([
             'cancel',
         ]);
 
-                /*
+        /*
         |--------------------------------------------------------------------------
         | Customer Reviews
         |--------------------------------------------------------------------------
@@ -450,6 +455,8 @@ Route::middleware([
     ->prefix('admin/providers')
     ->group(function () {
 
+        Route::get('/', [AdminProviderController::class, 'index']);
+
         Route::get('/pending', [
             ProviderVerificationController::class,
             'pending',
@@ -493,6 +500,20 @@ Route::middleware([
 ])
     ->prefix('admin')
     ->group(function () {
+
+        Route::get('/dashboard', [
+            AdminDashboardController::class,
+            'dashboard',
+        ]);
+
+        Route::get('/customers', [AdminCustomerController::class, 'index']);
+        Route::get('/customers/{id}', [AdminCustomerController::class, 'show']);
+
+        Route::get('/services', [AdminServiceController::class, 'index']);
+        Route::get('/services/{id}', [AdminServiceController::class, 'show']);
+
+        Route::get('/categories', [AdminCategoryController::class, 'index']);
+        Route::get('/categories/{id}', [AdminCategoryController::class, 'show']);
 
         Route::get('/payments', [
             PaymentController::class,

@@ -2,12 +2,13 @@
 
 namespace App\Http\Controllers\Api\Admin;
 
-use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
+use App\Http\Resources\AdminProviderResource;
 use App\Models\ProviderVerificationHistory;
 use App\Models\ServiceProvider;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ProviderVerificationController extends Controller
 {
@@ -41,8 +42,10 @@ class ProviderVerificationController extends Controller
         $provider = ServiceProvider::with([
             'user:id,name,email',
             'categories:id,name',
-            'verificationHistory.admin:id,name,email',
-        ])->find($id);
+        ])
+            ->withCount(['services', 'bookings', 'reviews'])
+            ->withAvg('reviews', 'rating')
+            ->find($id);
 
         if (! $provider) {
             return response()->json([
@@ -51,7 +54,7 @@ class ProviderVerificationController extends Controller
         }
 
         return response()->json([
-            'provider' => $provider,
+            'provider' => new AdminProviderResource($provider),
         ]);
     }
 
