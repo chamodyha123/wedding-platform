@@ -555,22 +555,22 @@ class MarketplaceController extends Controller
             );
         }
 
-        if (! empty($validated['search'])) {
+        $searchTerm = trim($validated['search'] ?? '');
+
+        if ($searchTerm !== '') {
             $search =
-                '%' . $validated['search'] . '%';
+                '%'.$searchTerm.'%';
 
             $query->where(
                 function ($searchQuery) use ($search) {
                     $searchQuery
-                        ->where(
-                            'name',
-                            'ilike',
-                            $search
+                        ->whereRaw(
+                            'LOWER(name) LIKE LOWER(?)',
+                            [$search]
                         )
-                        ->orWhere(
-                            'description',
-                            'ilike',
-                            $search
+                        ->orWhereRaw(
+                            'LOWER(description) LIKE LOWER(?)',
+                            [$search]
                         )
                         ->orWhereHas(
                             'provider',
@@ -584,10 +584,9 @@ class MarketplaceController extends Controller
                                         'is_active',
                                         true
                                     )
-                                    ->where(
-                                        'business_name',
-                                        'ilike',
-                                        $search
+                                    ->whereRaw(
+                                        'LOWER(business_name) LIKE LOWER(?)',
+                                        [$search]
                                     );
                             }
                         )
@@ -599,10 +598,9 @@ class MarketplaceController extends Controller
                                         'is_active',
                                         true
                                     )
-                                    ->where(
-                                        'name',
-                                        'ilike',
-                                        $search
+                                    ->whereRaw(
+                                        'LOWER(name) LIKE LOWER(?)',
+                                        [$search]
                                     );
                             }
                         );
