@@ -11,8 +11,10 @@ use App\Http\Controllers\Api\Admin\AdminServiceController;
 use App\Http\Controllers\Api\Admin\ProviderVerificationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
+use App\Http\Controllers\Api\CustomerProfileController;
 use App\Http\Controllers\Api\MarketplaceController;
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\PayHereNotificationController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\ServiceAvailabilityController;
 use App\Http\Controllers\Api\ServiceController;
@@ -100,6 +102,11 @@ Route::prefix('marketplace')->group(function () {
     ]);
 });
 
+Route::post('/payments/payhere/notify', [
+    PayHereNotificationController::class,
+    'store',
+]);
+
 /*
 |--------------------------------------------------------------------------
 | Customer Routes
@@ -112,6 +119,16 @@ Route::middleware([
 ])
     ->prefix('customer')
     ->group(function () {
+
+        Route::get('/profile', [
+            CustomerProfileController::class,
+            'show',
+        ]);
+
+        Route::put('/profile', [
+            CustomerProfileController::class,
+            'update',
+        ]);
 
         /*
         |--------------------------------------------------------------------------

@@ -8,6 +8,7 @@ use App\Http\Resources\PaymentResource;
 use App\Http\Resources\ProviderPaymentResource;
 use App\Models\Booking;
 use App\Models\Payment;
+use App\Services\Payments\PayHerePaymentGateway;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,7 @@ class PaymentController extends Controller
             'booking_id' => ['nullable', 'integer', 'exists:bookings,id'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
+
         $payments = Payment::query()
             ->with([
                 'booking.customer:id,name,email',
@@ -196,7 +198,7 @@ class PaymentController extends Controller
     /**
      * Start a payment attempt.
      */
-    public function store(Request $request, int $bookingId): JsonResponse
+    public function store(Request $request, int $bookingId, PayHerePaymentGateway $payHere): JsonResponse
     {
         $user = $request->user();
 
@@ -215,7 +217,7 @@ class PaymentController extends Controller
         ]);
 
         $result = DB::transaction(
-            function () use ($user, $bookingId, $validated) {
+            function () use ($user, $bookingId, $validated, $payHere) {
                 $booking = Booking::query()
                     ->where('id', $bookingId)
                     ->where('customer_id', $user->id)
@@ -263,6 +265,26 @@ class PaymentController extends Controller
                     ];
                 }
 
+                if ($validated['payment_method'] === 'card') {
+                    if (! $user->customerProfile) {
+                        return [
+                            'error' => true,
+                            'status' => 422,
+                            'message' => 'Complete your customer profile before starting PayHere checkout.',
+                        ];
+                    }
+
+                    try {
+                        $payHere->settings();
+                    } catch (\RuntimeException) {
+                        return [
+                            'error' => true,
+                            'status' => 503,
+                            'message' => 'PayHere checkout is not configured.',
+                        ];
+                    }
+                }
+
                 $payment = Payment::create([
                     'booking_id' => $booking->id,
                     'customer_id' => $user->id,
@@ -271,16 +293,34 @@ class PaymentController extends Controller
                     'currency' => 'LKR',
                     'payment_method' => $validated['payment_method'],
                     'status' => 'pending',
-                    'gateway' => null,
+                    'gateway' => $validated['payment_method'] === 'card' ? 'payhere' : null,
                     'gateway_transaction_id' => null,
                 ]);
 
                 $booking->payment_status = 'pending';
                 $booking->save();
 
+                $checkout = null;
+
+                if ($validated['payment_method'] === 'card') {
+                    try {
+                        $checkout = $payHere->checkout(
+                            $payment->load(['booking', 'customer']),
+                            $user->customerProfile
+                        );
+                    } catch (\RuntimeException) {
+                        return [
+                            'error' => true,
+                            'status' => 503,
+                            'message' => 'PayHere checkout is not configured.',
+                        ];
+                    }
+                }
+
                 return [
                     'error' => false,
                     'payment' => $payment,
+                    'checkout' => $checkout,
                 ];
             }
         );
@@ -299,6 +339,7 @@ class PaymentController extends Controller
             'payment' => $result['payment']->load([
                 'booking:id,booking_reference,customer_id,total_amount,booking_status,payment_status',
             ]),
+            ...$result['checkout'] ? ['checkout' => $result['checkout']] : [],
         ], 201);
     }
 

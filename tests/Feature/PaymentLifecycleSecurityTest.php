@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Booking;
+use App\Models\CustomerProfile;
 use App\Models\Payment;
 use App\Models\Service;
 use App\Models\ServiceCategory;
@@ -168,6 +169,8 @@ class PaymentLifecycleSecurityTest extends TestCase
         [$customer, $booking] = $this->createBookingFixture(
             'server-amount'
         );
+
+        $this->makePayHereReady($customer);
 
         $token = $customer
             ->createToken('customer-token')
@@ -383,6 +386,8 @@ class PaymentLifecycleSecurityTest extends TestCase
         [$customer, $booking] = $this->createBookingFixture(
             'failed-retry'
         );
+
+        $this->makePayHereReady($customer);
 
         $payment = $this->createPayment(
             $booking,
@@ -753,6 +758,28 @@ class PaymentLifecycleSecurityTest extends TestCase
             'currency' => 'LKR',
             'payment_method' => 'card',
             'status' => $status,
+        ]);
+    }
+
+    private function makePayHereReady(User $customer): void
+    {
+        $customer->customerProfile()->create([
+            'first_name' => 'Test',
+            'last_name' => 'Customer',
+            'phone' => '+94770000000',
+            'address' => '1 Test Road',
+            'city' => 'Colombo',
+            'country' => 'Sri Lanka',
+        ]);
+
+        config([
+            'services.payhere.mode' => 'sandbox',
+            'services.payhere.merchant_id' => 'test-merchant',
+            'services.payhere.merchant_secret' => 'test-secret',
+            'services.payhere.return_url' => 'https://example.test/return',
+            'services.payhere.cancel_url' => 'https://example.test/cancel',
+            'services.payhere.notify_url' => 'https://example.test/notify',
+            'services.payhere.currency' => 'LKR',
         ]);
     }
 }
