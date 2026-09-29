@@ -22,7 +22,7 @@ class PaymentController extends Controller
     public function adminIndex(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'status' => ['nullable', 'string', 'in:pending,processing,paid,failed,cancelled,refunded'],
+            'status' => ['nullable', 'string', 'in:pending,processing,paid,failed,cancelled,refunded,chargedback'],
             'customer_id' => ['nullable', 'integer', 'exists:users,id'],
             'provider_id' => ['nullable', 'integer', 'exists:service_providers,id'],
             'booking_id' => ['nullable', 'integer', 'exists:bookings,id'],

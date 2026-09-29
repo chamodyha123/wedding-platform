@@ -32,6 +32,7 @@ class AdminPaymentResource extends JsonResource
             'failed_at' => $this->failed_at,
             'cancelled_at' => $this->cancelled_at,
             'refunded_at' => $this->refunded_at,
+            'charged_back_at' => $this->charged_back_at,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
 

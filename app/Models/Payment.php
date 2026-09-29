@@ -36,6 +36,7 @@ class Payment extends Model
         'failed_at',
         'cancelled_at',
         'refunded_at',
+        'charged_back_at',
     ];
 
     /**
@@ -60,6 +61,9 @@ class Payment extends Model
                 'datetime',
 
             'refunded_at' =>
+                'datetime',
+
+            'charged_back_at' =>
                 'datetime',
         ];
     }

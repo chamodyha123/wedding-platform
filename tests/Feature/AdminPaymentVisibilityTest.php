@@ -258,6 +258,28 @@ class AdminPaymentVisibilityTest extends TestCase
         );
     }
 
+    public function test_admin_can_filter_chargeback_payments_without_gateway_data_exposure(): void
+    {
+        $admin = $this->createAdmin();
+        $payment = $this->createPaymentFixture('chargedback');
+        $payment->update([
+            'status' => 'chargedback',
+            'charged_back_at' => now(),
+        ]);
+
+        $token = $admin->createToken('admin-token')->plainTextToken;
+
+        $paymentData = $this->withToken($token)
+            ->getJson('/api/admin/payments?status=chargedback')
+            ->assertOk()
+            ->json('payments.0');
+
+        $this->assertSame($payment->id, $paymentData['id']);
+        $this->assertSame('chargedback', $paymentData['status']);
+        $this->assertNotNull($paymentData['charged_back_at']);
+        $this->assertArrayNotHasKey('gateway_transaction_id', $paymentData);
+    }
+
     public function test_nonexistent_payment_returns_not_found(): void
     {
         $admin = $this->createAdmin();
