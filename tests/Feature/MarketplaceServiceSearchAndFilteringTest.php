@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Booking;
+use App\Models\Review;
 use App\Models\Service;
 use App\Models\ServiceCategory;
 use App\Models\ServiceProvider;
@@ -106,6 +108,89 @@ class MarketplaceServiceSearchAndFilteringTest extends TestCase
         $this->assertNotSame($visible->id, $hidden->id);
     }
 
+    public function test_service_sorting_is_deterministic_and_preserves_the_default_order(): void
+    {
+        $provider = $this->createProvider('sorting');
+        $category = $this->createCategory('sorting');
+        $alpha = $this->createService($provider, $category, 'alpha', 'Alpha', 'Wedding coverage');
+        $beta = $this->createService($provider, $category, 'beta', 'Beta', 'Wedding coverage');
+        $gamma = $this->createService($provider, $category, 'gamma', 'Gamma', 'Wedding coverage');
+        $unrated = $this->createService($provider, $category, 'unrated', 'Unrated', 'Wedding coverage');
+        $alpha->forceFill(['created_at' => now()->subDays(3)])->save();
+        $beta->forceFill(['created_at' => now()->subDays(2)])->save();
+        $gamma->forceFill(['created_at' => now()->subDay()])->save();
+        $this->createReview($alpha, 'alpha-rating', 4);
+        $this->createReview($beta, 'beta-rating', 4);
+        $this->createReview($gamma, 'gamma-rating', 2);
+
+        $this->assertSame([$unrated->id, $gamma->id, $beta->id, $alpha->id], $this->serviceIds($this->getJson('/api/marketplace/services?per_page=100')->assertOk()->json('data')));
+        $this->assertSame([$unrated->id, $gamma->id, $beta->id, $alpha->id], $this->serviceIds($this->getJson('/api/marketplace/services?sort=newest&per_page=100')->assertOk()->json('data')));
+        $this->assertSame([$alpha->id, $beta->id, $gamma->id, $unrated->id], $this->serviceIds($this->getJson('/api/marketplace/services?sort=oldest&per_page=100')->assertOk()->json('data')));
+        $this->assertSame([$alpha->id, $beta->id, $gamma->id, $unrated->id], $this->serviceIds($this->getJson('/api/marketplace/services?sort=name_asc&per_page=100')->assertOk()->json('data')));
+        $this->assertSame([$unrated->id, $gamma->id, $beta->id, $alpha->id], $this->serviceIds($this->getJson('/api/marketplace/services?sort=name_desc&per_page=100')->assertOk()->json('data')));
+        $this->assertSame([$beta->id, $alpha->id, $gamma->id, $unrated->id], $this->serviceIds($this->getJson('/api/marketplace/services?sort=rating_high&per_page=100')->assertOk()->json('data')));
+        $this->assertSame([$gamma->id, $alpha->id, $beta->id, $unrated->id], $this->serviceIds($this->getJson('/api/marketplace/services?sort=rating_low&per_page=100')->assertOk()->json('data')));
+    }
+
+    public function test_service_sorting_validates_and_composes_with_public_filters(): void
+    {
+        $provider = $this->createProvider('sort-provider');
+        $otherProvider = $this->createProvider('sort-other');
+        $category = $this->createCategory('sort-category');
+        $otherCategory = $this->createCategory('sort-other');
+        $match = $this->createService($provider, $category, 'sort-match', 'Wedding Alpha', 'Wedding');
+        $this->createService($otherProvider, $category, 'sort-provider-miss', 'Wedding Beta', 'Wedding');
+        $this->createService($provider, $otherCategory, 'sort-category-miss', 'Wedding Gamma', 'Wedding');
+        $hidden = $this->createService($this->createProvider('sort-hidden', 'pending'), $category, 'sort-hidden', 'Wedding Hidden', 'Wedding');
+
+        $this->getJson('/api/marketplace/services?sort=password')->assertUnprocessable()->assertJsonValidationErrors(['sort']);
+        $this->getJson('/api/marketplace/services?sort=DROP%20TABLE')->assertUnprocessable()->assertJsonValidationErrors(['sort']);
+        $response = $this->getJson('/api/marketplace/services?search=wedding&category='.$category->slug.'&provider='.$provider->business_slug.'&sort=name_asc&per_page=1&page=1')->assertOk()->assertJsonPath('total', 1)->assertJsonPath('per_page', 1);
+
+        $this->assertSame([$match->id], $this->serviceIds($response->json('data')));
+        $this->assertNotContains($hidden->id, $this->serviceIds($response->json('data')));
+    }
+
+    public function test_provider_search_finds_only_public_data_and_preserves_aggregates(): void
+    {
+        $category = $this->createCategory('provider-search');
+        $publicProvider = $this->createProvider('golden-lens');
+        $publicProvider->update(['business_name' => 'Golden Lens Studio', 'description' => 'Artful wedding stories']);
+        $publicProvider->categories()->attach($category->id);
+        $publicService = $this->createService($publicProvider, $category, 'provider-search', 'Photography', 'Public service');
+        $this->createReview($publicService, 'provider-search-rating', 5);
+        $descriptionProvider = $this->createProvider('description-match');
+        $descriptionProvider->update(['description' => 'Cinematic celebrations']);
+        $descriptionProvider->categories()->attach($category->id);
+        $unverified = $this->createProvider('hidden-provider', 'pending');
+        $unverified->update(['business_name' => 'Golden Hidden']);
+        $inactive = $this->createProvider('inactive-provider', 'verified', false);
+        $inactive->update(['description' => 'Artful hidden stories']);
+        $inactiveCategory = ServiceCategory::create(['name' => 'Hidden Category', 'slug' => 'hidden-category', 'is_active' => false]);
+        $unverified->categories()->attach($inactiveCategory->id);
+
+        $nameResponse = $this->getJson('/api/marketplace/providers?search=%20GOLDEN%20&per_page=100')->assertOk()->assertJsonPath('total', 1);
+        $this->assertSame([$publicProvider->id], $this->providerIds($nameResponse->json('data')));
+        $this->assertSame(1, $nameResponse->json('data.0.reviews_count'));
+        $this->assertSame(5, $nameResponse->json('data.0.average_rating'));
+        $this->assertSame([$descriptionProvider->id], $this->providerIds($this->getJson('/api/marketplace/providers?search=CINEMATIC&per_page=100')->assertOk()->json('data')));
+        $this->assertSame([$publicProvider->id, $descriptionProvider->id], $this->providerIds($this->getJson('/api/marketplace/providers?search=category%20provider-search&per_page=100')->assertOk()->assertJsonPath('total', 2)->json('data')));
+        $this->getJson('/api/marketplace/providers?search[]=golden')->assertUnprocessable()->assertJsonValidationErrors(['search']);
+        $this->getJson('/api/marketplace/providers?search='.str_repeat('a', 256))->assertUnprocessable()->assertJsonValidationErrors(['search']);
+        $this->assertNotContains($unverified->id, $this->providerIds($this->getJson('/api/marketplace/providers?search=hidden&per_page=100')->assertOk()->json('data')));
+        $this->assertNotContains($inactive->id, $this->providerIds($this->getJson('/api/marketplace/providers?search=artful&per_page=100')->assertOk()->json('data')));
+    }
+
+    public function test_whitespace_only_provider_search_preserves_public_listing(): void
+    {
+        $first = $this->createProvider('provider-whitespace-first');
+        $second = $this->createProvider('provider-whitespace-second');
+
+        $response = $this->getJson('/api/marketplace/providers?search=%20%20%20&per_page=100')->assertOk()->assertJsonPath('total', 2);
+
+        $this->assertSame([$first->id, $second->id], $this->providerIds($response->json('data')));
+    }
+
     private function createProvider(string $suffix, string $verificationStatus = 'verified', bool $isActive = true): ServiceProvider
     {
         $user = User::factory()->create(['email' => $suffix.'@example.test']);
@@ -123,6 +208,14 @@ class MarketplaceServiceSearchAndFilteringTest extends TestCase
         return Service::create(['service_provider_id' => $provider->id, 'service_category_id' => $category->id, 'name' => $name, 'slug' => 'service-'.$suffix, 'description' => $description, 'status' => $status]);
     }
 
+    private function createReview(Service $service, string $suffix, int $rating): Review
+    {
+        $customer = User::factory()->create(['email' => $suffix.'@example.test']);
+        $booking = Booking::create(['booking_reference' => 'BK-'.$suffix, 'customer_id' => $customer->id, 'service_provider_id' => $service->service_provider_id, 'service_id' => $service->id, 'event_date' => now()->addDay()->toDateString(), 'start_time' => '10:00', 'end_time' => '11:00', 'total_amount' => 100, 'booking_status' => 'completed', 'payment_status' => 'unpaid']);
+
+        return Review::create(['booking_id' => $booking->id, 'customer_id' => $customer->id, 'service_provider_id' => $service->service_provider_id, 'service_id' => $service->id, 'rating' => $rating]);
+    }
+
     /**
      * @param  array<int, array<string, mixed>>  $services
      * @return array<int, int>
@@ -130,5 +223,14 @@ class MarketplaceServiceSearchAndFilteringTest extends TestCase
     private function serviceIds(array $services): array
     {
         return array_map(fn (array $service): int => $service['id'], $services);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $providers
+     * @return array<int, int>
+     */
+    private function providerIds(array $providers): array
+    {
+        return array_map(fn (array $provider): int => $provider['id'], $providers);
     }
 }

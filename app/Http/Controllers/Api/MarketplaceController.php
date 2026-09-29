@@ -145,22 +145,20 @@ class MarketplaceController extends Controller
             );
         }
 
-        if (! empty($validated['search'])) {
-            $search = '%' . $validated['search'] . '%';
+        $searchTerm = trim($validated['search'] ?? '');
+
+        if ($searchTerm !== '') {
+            $search = '%'.$searchTerm.'%';
 
             $query->where(
                 function ($searchQuery) use ($search) {
                     $searchQuery
-                        ->where(
-                            'business_name',
-                            'ilike',
-                            $search
-                        )
-                        ->orWhere(
-                            'description',
-                            'ilike',
-                            $search
-                        );
+                        ->whereRaw('LOWER(business_name) LIKE LOWER(?)', [$search])
+                        ->orWhereRaw('LOWER(description) LIKE LOWER(?)', [$search])
+                        ->orWhereHas('categories', function ($categoryQuery) use ($search) {
+                            $categoryQuery->where('service_categories.is_active', true)
+                                ->whereRaw('LOWER(name) LIKE LOWER(?)', [$search]);
+                        });
                 }
             );
         }
@@ -328,6 +326,13 @@ class MarketplaceController extends Controller
                 'nullable',
                 'string',
                 'max:255',
+            ],
+
+            'sort' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'in:newest,oldest,name_asc,name_desc,rating_high,rating_low',
             ],
 
             'featured' => [
@@ -671,11 +676,19 @@ class MarketplaceController extends Controller
             );
         }
 
+        $sort = $validated['sort'] ?? null;
+
+        match ($sort) {
+            'newest' => $query->orderByDesc('created_at')->orderByDesc('id'),
+            'oldest' => $query->orderBy('created_at')->orderBy('id'),
+            'name_asc' => $query->orderBy('name')->orderBy('id'),
+            'name_desc' => $query->orderByDesc('name')->orderByDesc('id'),
+            'rating_high' => $query->orderByRaw('CASE WHEN reviews_avg_rating IS NULL THEN 1 ELSE 0 END')->orderByDesc('reviews_avg_rating')->orderByDesc('id'),
+            'rating_low' => $query->orderByRaw('CASE WHEN reviews_avg_rating IS NULL THEN 1 ELSE 0 END')->orderBy('reviews_avg_rating')->orderBy('id'),
+            default => $query->orderByDesc('is_featured')->latest('id'),
+        };
+
         $services = $query
-            ->orderByDesc(
-                'is_featured'
-            )
-            ->latest('id')
             ->paginate(
                 $validated['per_page'] ?? 12
             )
