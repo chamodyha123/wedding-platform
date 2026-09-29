@@ -25,6 +25,10 @@ class MarketplaceController extends Controller
                 'description',
             ])
             ->where('is_active', true)
+            ->withCount([
+                'services as services_count' => fn ($query) => $query->where('status', 'published')->whereHas('provider', fn ($providerQuery) => $providerQuery->where('verification_status', 'verified')->where('is_active', true)),
+                'providers as providers_count' => fn ($query) => $query->where('verification_status', 'verified')->where('is_active', true),
+            ])
             ->orderBy('name')
             ->get();
 
@@ -32,6 +36,25 @@ class MarketplaceController extends Controller
             'categories' => $categories,
             'count' => $categories->count(),
         ]);
+    }
+
+    public function category(string $slug): JsonResponse
+    {
+        $category = ServiceCategory::query()
+            ->select(['id', 'name', 'slug', 'description'])
+            ->where('is_active', true)
+            ->where('slug', $slug)
+            ->withCount([
+                'services as services_count' => fn ($query) => $query->where('status', 'published')->whereHas('provider', fn ($providerQuery) => $providerQuery->where('verification_status', 'verified')->where('is_active', true)),
+                'providers as providers_count' => fn ($query) => $query->where('verification_status', 'verified')->where('is_active', true),
+            ])
+            ->first();
+
+        if (! $category) {
+            return response()->json(['message' => 'Category not found.'], 404);
+        }
+
+        return response()->json(['category' => $category]);
     }
 
     /**
@@ -67,6 +90,13 @@ class MarketplaceController extends Controller
                 'nullable',
                 'string',
                 'max:255',
+            ],
+
+            'sort' => [
+                'sometimes',
+                'nullable',
+                'string',
+                'in:newest,oldest,name_asc,name_desc,rating_high,rating_low',
             ],
 
             'per_page' => [
@@ -163,8 +193,19 @@ class MarketplaceController extends Controller
             );
         }
 
+        $sort = $validated['sort'] ?? null;
+
+        match ($sort) {
+            'newest' => $query->orderByDesc('created_at')->orderByDesc('id'),
+            'oldest' => $query->orderBy('created_at')->orderBy('id'),
+            'name_asc' => $query->orderBy('business_name')->orderBy('id'),
+            'name_desc' => $query->orderByDesc('business_name')->orderByDesc('id'),
+            'rating_high' => $query->orderByRaw('CASE WHEN reviews_avg_rating IS NULL THEN 1 ELSE 0 END')->orderByDesc('reviews_avg_rating')->orderByDesc('id'),
+            'rating_low' => $query->orderByRaw('CASE WHEN reviews_avg_rating IS NULL THEN 1 ELSE 0 END')->orderBy('reviews_avg_rating')->orderBy('id'),
+            default => $query->orderBy('business_name'),
+        };
+
         $providers = $query
-            ->orderBy('business_name')
             ->paginate(
                 $validated['per_page'] ?? 12
             )

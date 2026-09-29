@@ -191,6 +191,54 @@ class MarketplaceServiceSearchAndFilteringTest extends TestCase
         $this->assertSame([$first->id, $second->id], $this->providerIds($response->json('data')));
     }
 
+    public function test_provider_category_filter_and_sorting_are_deterministic(): void
+    {
+        $category = $this->createCategory('provider-sort');
+        $otherCategory = $this->createCategory('provider-sort-other');
+        $alpha = $this->createProvider('provider-alpha');
+        $beta = $this->createProvider('provider-beta');
+        $unrated = $this->createProvider('provider-unrated');
+        $alpha->update(['business_name' => 'Alpha Studio']);
+        $beta->update(['business_name' => 'Beta Studio']);
+        $unrated->update(['business_name' => 'Unrated Studio']);
+        $alpha->categories()->attach($category->id);
+        $beta->categories()->attach($category->id);
+        $unrated->categories()->attach($otherCategory->id);
+        $alphaService = $this->createService($alpha, $category, 'provider-alpha', 'Alpha service', 'Public');
+        $betaService = $this->createService($beta, $category, 'provider-beta', 'Beta service', 'Public');
+        $this->createReview($alphaService, 'provider-alpha-rating', 4);
+        $this->createReview($betaService, 'provider-beta-rating', 4);
+
+        $this->assertSame([$alpha->id, $beta->id], $this->providerIds($this->getJson('/api/marketplace/providers?category='.$category->slug.'&per_page=100')->assertOk()->json('data')));
+        $this->assertSame([$beta->id, $alpha->id], $this->providerIds($this->getJson('/api/marketplace/providers?category='.$category->slug.'&sort=rating_high&per_page=100')->assertOk()->json('data')));
+        $this->assertSame([$alpha->id], $this->providerIds($this->getJson('/api/marketplace/providers?category='.$category->slug.'&sort=rating_low&per_page=1&page=1')->assertOk()->assertJsonPath('total', 2)->assertJsonPath('per_page', 1)->json('data')));
+        $this->getJson('/api/marketplace/providers?category[]=bad')->assertUnprocessable()->assertJsonValidationErrors(['category']);
+        $this->getJson('/api/marketplace/providers?sort=password')->assertUnprocessable()->assertJsonValidationErrors(['sort']);
+        $this->getJson('/api/marketplace/providers?sort=DROP%20TABLE')->assertUnprocessable()->assertJsonValidationErrors(['sort']);
+    }
+
+    public function test_active_category_browsing_exposes_only_public_counts_and_slug_discovery(): void
+    {
+        $category = $this->createCategory('browse');
+        $inactiveCategory = ServiceCategory::create(['name' => 'Inactive browse', 'slug' => 'inactive-browse', 'is_active' => false]);
+        $provider = $this->createProvider('browse-public');
+        $provider->categories()->attach($category->id);
+        $publicService = $this->createService($provider, $category, 'browse-public', 'Public browse', 'Public');
+        $this->createService($provider, $category, 'browse-draft', 'Draft browse', 'Draft', 'draft');
+        $hiddenProvider = $this->createProvider('browse-hidden', 'pending');
+        $hiddenProvider->categories()->attach($category->id);
+        $this->createService($hiddenProvider, $category, 'browse-hidden', 'Hidden browse', 'Hidden');
+
+        $list = $this->getJson('/api/marketplace/categories')->assertOk();
+        $this->assertContains($category->id, array_column($list->json('categories'), 'id'));
+        $this->assertNotContains($inactiveCategory->id, array_column($list->json('categories'), 'id'));
+        $this->getJson('/api/marketplace/categories/'.$category->slug)->assertOk()->assertJsonPath('category.services_count', 1)->assertJsonPath('category.providers_count', 1);
+        $this->getJson('/api/marketplace/categories/'.$inactiveCategory->slug)->assertNotFound();
+        $this->getJson('/api/marketplace/categories/unknown')->assertNotFound();
+        $this->getJson('/api/marketplace/services?category='.$category->slug.'&per_page=100')->assertOk()->assertJsonPath('data.0.id', $publicService->id)->assertJsonPath('total', 1);
+        $this->getJson('/api/marketplace/providers?category='.$category->slug.'&per_page=100')->assertOk()->assertJsonPath('data.0.id', $provider->id)->assertJsonPath('total', 1);
+    }
+
     private function createProvider(string $suffix, string $verificationStatus = 'verified', bool $isActive = true): ServiceProvider
     {
         $user = User::factory()->create(['email' => $suffix.'@example.test']);
