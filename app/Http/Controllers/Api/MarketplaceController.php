@@ -200,8 +200,8 @@ class MarketplaceController extends Controller
             'oldest' => $query->orderBy('created_at')->orderBy('id'),
             'name_asc' => $query->orderBy('business_name')->orderBy('id'),
             'name_desc' => $query->orderByDesc('business_name')->orderByDesc('id'),
-            'rating_high' => $query->orderByRaw('CASE WHEN reviews_avg_rating IS NULL THEN 1 ELSE 0 END')->orderByDesc('reviews_avg_rating')->orderByDesc('id'),
-            'rating_low' => $query->orderByRaw('CASE WHEN reviews_avg_rating IS NULL THEN 1 ELSE 0 END')->orderBy('reviews_avg_rating')->orderBy('id'),
+            'rating_high' => $query->orderByRaw('CASE WHEN (SELECT AVG(rating) FROM reviews WHERE reviews.service_provider_id = service_providers.id) IS NULL THEN 1 ELSE 0 END')->orderByDesc('reviews_avg_rating')->orderByDesc('id'),
+            'rating_low' => $query->orderByRaw('CASE WHEN (SELECT AVG(rating) FROM reviews WHERE reviews.service_provider_id = service_providers.id) IS NULL THEN 1 ELSE 0 END')->orderBy('reviews_avg_rating')->orderBy('id'),
             default => $query->orderBy('business_name'),
         };
 
@@ -738,8 +738,8 @@ class MarketplaceController extends Controller
             'oldest' => $query->orderBy('created_at')->orderBy('id'),
             'name_asc' => $query->orderBy('name')->orderBy('id'),
             'name_desc' => $query->orderByDesc('name')->orderByDesc('id'),
-            'rating_high' => $query->orderByRaw('CASE WHEN reviews_avg_rating IS NULL THEN 1 ELSE 0 END')->orderByDesc('reviews_avg_rating')->orderByDesc('id'),
-            'rating_low' => $query->orderByRaw('CASE WHEN reviews_avg_rating IS NULL THEN 1 ELSE 0 END')->orderBy('reviews_avg_rating')->orderBy('id'),
+            'rating_high' => $query->orderByRaw('CASE WHEN (SELECT AVG(rating) FROM reviews WHERE reviews.service_id = services.id) IS NULL THEN 1 ELSE 0 END')->orderByDesc('reviews_avg_rating')->orderByDesc('id'),
+            'rating_low' => $query->orderByRaw('CASE WHEN (SELECT AVG(rating) FROM reviews WHERE reviews.service_id = services.id) IS NULL THEN 1 ELSE 0 END')->orderBy('reviews_avg_rating')->orderBy('id'),
             default => $query->orderByDesc('is_featured')->latest('id'),
         };
 
