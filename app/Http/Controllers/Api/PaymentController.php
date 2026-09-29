@@ -20,6 +20,13 @@ class PaymentController extends Controller
      */
     public function adminIndex(Request $request): JsonResponse
     {
+        $validated = $request->validate([
+            'status' => ['nullable', 'string', 'in:pending,processing,paid,failed,cancelled,refunded'],
+            'customer_id' => ['nullable', 'integer', 'exists:users,id'],
+            'provider_id' => ['nullable', 'integer', 'exists:service_providers,id'],
+            'booking_id' => ['nullable', 'integer', 'exists:bookings,id'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
         $payments = Payment::query()
             ->with([
                 'booking.customer:id,name,email',
@@ -27,14 +34,17 @@ class PaymentController extends Controller
                 'booking.service:id,name,slug',
                 'booking.package:id,name,slug,price,duration_minutes',
             ])
-            ->latest('id')
-            ->get();
+            ->when($validated['status'] ?? null, fn ($query, $value) => $query->where('status', $value))
+            ->when($validated['customer_id'] ?? null, fn ($query, $value) => $query->where('customer_id', $value))
+            ->when($validated['booking_id'] ?? null, fn ($query, $value) => $query->where('booking_id', $value))
+            ->when($validated['provider_id'] ?? null, fn ($query, $value) => $query->whereHas('booking', fn ($bookingQuery) => $bookingQuery->where('service_provider_id', $value)))
+            ->latest('created_at')->latest('id')
+            ->paginate($validated['per_page'] ?? 15);
 
         return response()->json([
             'message' => 'Admin payments loaded successfully.',
-            'payments' => $payments->map(
-                fn (Payment $payment): array => (new AdminPaymentResource($payment))->toArray($request)
-            )->values(),
+            'payments' => AdminPaymentResource::collection($payments),
+            'pagination' => ['current_page' => $payments->currentPage(), 'per_page' => $payments->perPage(), 'total' => $payments->total(), 'last_page' => $payments->lastPage()],
         ]);
     }
 
