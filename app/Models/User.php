@@ -76,4 +76,12 @@ class User extends Authenticatable
             'customer_id'
         );
     }
+
+    /**
+     * Customer checkout profile belonging to this user.
+     */
+    public function customerProfile(): HasOne
+    {
+        return $this->hasOne(CustomerProfile::class);
+    }
 }
