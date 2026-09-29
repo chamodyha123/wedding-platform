@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\Review;
 use App\Models\Service;
 use App\Models\ServiceCategory;
+use App\Models\ServicePackage;
 use App\Models\ServiceProvider;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -239,6 +240,54 @@ class MarketplaceServiceSearchAndFilteringTest extends TestCase
         $this->getJson('/api/marketplace/providers?category='.$category->slug.'&per_page=100')->assertOk()->assertJsonPath('data.0.id', $provider->id)->assertJsonPath('total', 1);
     }
 
+    public function test_price_filters_use_any_published_package_and_validate_ranges(): void
+    {
+        $provider = $this->createProvider('price');
+        $category = $this->createCategory('price');
+        $rangeMatch = $this->createService($provider, $category, 'price-range', 'Range match', 'Wedding price');
+        $below = $this->createService($provider, $category, 'price-below', 'Below range', 'Wedding price');
+        $noPackages = $this->createService($provider, $category, 'price-none', 'No packages', 'Wedding price');
+        $this->createPackage($rangeMatch, 'low', 100);
+        $this->createPackage($rangeMatch, 'match', 200);
+        $this->createPackage($rangeMatch, 'hidden', 500, 'draft');
+        $this->createPackage($below, 'below', 50);
+
+        $this->assertSame([$rangeMatch->id], $this->serviceIds($this->getJson('/api/marketplace/services?min_price=200&max_price=200&per_page=100')->assertOk()->json('data')));
+        $this->assertSame([$rangeMatch->id], $this->serviceIds($this->getJson('/api/marketplace/services?min_price=150&per_page=100')->assertOk()->json('data')));
+        $this->assertSame([$below->id, $rangeMatch->id], $this->serviceIds($this->getJson('/api/marketplace/services?max_price=100&per_page=100')->assertOk()->json('data')));
+        $this->assertContains($noPackages->id, $this->serviceIds($this->getJson('/api/marketplace/services?per_page=100')->assertOk()->json('data')));
+        $this->getJson('/api/marketplace/services?min_price=-1')->assertUnprocessable()->assertJsonValidationErrors(['min_price']);
+        $this->getJson('/api/marketplace/services?max_price=invalid')->assertUnprocessable()->assertJsonValidationErrors(['max_price']);
+        $this->getJson('/api/marketplace/services?min_price[]=100')->assertUnprocessable()->assertJsonValidationErrors(['min_price']);
+        $this->getJson('/api/marketplace/services?min_price=300&max_price=200')->assertUnprocessable()->assertJsonValidationErrors(['max_price']);
+    }
+
+    public function test_minimum_rating_filters_aggregate_ratings_and_composes_with_price(): void
+    {
+        $provider = $this->createProvider('rating-filter');
+        $category = $this->createCategory('rating-filter');
+        $high = $this->createService($provider, $category, 'rating-high', 'High rated', 'Wedding rating');
+        $exact = $this->createService($provider, $category, 'rating-exact', 'Exact rated', 'Wedding rating');
+        $low = $this->createService($provider, $category, 'rating-low', 'Low rated', 'Wedding rating');
+        $unrated = $this->createService($provider, $category, 'rating-none', 'Unrated', 'Wedding rating');
+        $this->createPackage($high, 'high', 200);
+        $this->createPackage($exact, 'exact', 200);
+        $this->createReview($high, 'rating-high-one', 5);
+        $this->createReview($exact, 'rating-exact-one', 4);
+        $this->createReview($low, 'rating-low-one', 3);
+
+        $response = $this->getJson('/api/marketplace/services?search=wedding&category='.$category->slug.'&provider='.$provider->business_slug.'&min_price=200&max_price=200&min_rating=4&sort=rating_high&per_page=100')->assertOk();
+        $this->assertSame([$high->id, $exact->id], $this->serviceIds($response->json('data')));
+        $this->assertSame(5, $response->json('data.0.average_rating'));
+        $this->assertSame(1, $response->json('data.0.reviews_count'));
+        $this->assertNotContains($low->id, $this->serviceIds($response->json('data')));
+        $this->assertNotContains($unrated->id, $this->serviceIds($response->json('data')));
+        $this->getJson('/api/marketplace/services?min_rating=0')->assertUnprocessable()->assertJsonValidationErrors(['min_rating']);
+        $this->getJson('/api/marketplace/services?min_rating=6')->assertUnprocessable()->assertJsonValidationErrors(['min_rating']);
+        $this->getJson('/api/marketplace/services?min_rating=bad')->assertUnprocessable()->assertJsonValidationErrors(['min_rating']);
+        $this->getJson('/api/marketplace/services?min_rating[]=4')->assertUnprocessable()->assertJsonValidationErrors(['min_rating']);
+    }
+
     private function createProvider(string $suffix, string $verificationStatus = 'verified', bool $isActive = true): ServiceProvider
     {
         $user = User::factory()->create(['email' => $suffix.'@example.test']);
@@ -262,6 +311,11 @@ class MarketplaceServiceSearchAndFilteringTest extends TestCase
         $booking = Booking::create(['booking_reference' => 'BK-'.$suffix, 'customer_id' => $customer->id, 'service_provider_id' => $service->service_provider_id, 'service_id' => $service->id, 'event_date' => now()->addDay()->toDateString(), 'start_time' => '10:00', 'end_time' => '11:00', 'total_amount' => 100, 'booking_status' => 'completed', 'payment_status' => 'unpaid']);
 
         return Review::create(['booking_id' => $booking->id, 'customer_id' => $customer->id, 'service_provider_id' => $service->service_provider_id, 'service_id' => $service->id, 'rating' => $rating]);
+    }
+
+    private function createPackage(Service $service, string $suffix, int $price, string $status = 'published'): ServicePackage
+    {
+        return ServicePackage::create(['service_id' => $service->id, 'name' => 'Package '.$suffix, 'slug' => 'package-'.$suffix, 'price' => $price, 'status' => $status]);
     }
 
     /**

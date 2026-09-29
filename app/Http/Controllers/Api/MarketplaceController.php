@@ -395,6 +395,13 @@ class MarketplaceController extends Controller
                 'min:0',
             ],
 
+            'min_rating' => [
+                'sometimes',
+                'nullable',
+                'numeric',
+                'between:1,5',
+            ],
+
             'per_page' => [
                 'sometimes',
                 'integer',
@@ -714,6 +721,13 @@ class MarketplaceController extends Controller
                             );
                     }
                 }
+            );
+        }
+
+        if (array_key_exists('min_rating', $validated) && $validated['min_rating'] !== null) {
+            $query->whereRaw(
+                '(SELECT AVG(rating) FROM reviews WHERE reviews.service_id = services.id) >= CAST(? AS REAL)',
+                [(float) $validated['min_rating']]
             );
         }
 
