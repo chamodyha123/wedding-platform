@@ -69,6 +69,11 @@ Route::prefix('marketplace')->group(function () {
         'categories',
     ]);
 
+    Route::get('/categories/{slug}', [
+        MarketplaceController::class,
+        'category',
+    ]);
+
     Route::get('/providers', [
         MarketplaceController::class,
         'providers',
