@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\CustomerProfileController;
 use App\Http\Controllers\Api\MarketplaceController;
 use App\Http\Controllers\Api\PaymentController;
+use App\Http\Controllers\Api\PayHereNotificationController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\ServiceAvailabilityController;
 use App\Http\Controllers\Api\ServiceController;
@@ -100,6 +101,11 @@ Route::prefix('marketplace')->group(function () {
         'service',
     ]);
 });
+
+Route::post('/payments/payhere/notify', [
+    PayHereNotificationController::class,
+    'store',
+]);
 
 /*
 |--------------------------------------------------------------------------

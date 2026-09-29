@@ -48,4 +48,32 @@ class PayHerePaymentGateway
 
         return array_map('strval', $settings);
     }
+
+    /**
+     * @param array<string, string> $notification
+     */
+    public function verifyNotification(array $notification): bool
+    {
+        $merchantId = config('services.payhere.merchant_id');
+        $merchantSecret = config('services.payhere.merchant_secret');
+
+        if (! is_string($merchantId) || $merchantId === '' || ! is_string($merchantSecret) || $merchantSecret === '') {
+            return false;
+        }
+
+        if (! hash_equals($merchantId, $notification['merchant_id'])) {
+            return false;
+        }
+
+        $expected = strtoupper(md5(
+            $notification['merchant_id'].
+            $notification['order_id'].
+            $notification['payhere_amount'].
+            $notification['payhere_currency'].
+            $notification['status_code'].
+            strtoupper(md5($merchantSecret))
+        ));
+
+        return hash_equals($expected, strtoupper($notification['md5sig']));
+    }
 }
