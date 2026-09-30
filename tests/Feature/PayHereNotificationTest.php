@@ -74,6 +74,23 @@ class PayHereNotificationTest extends TestCase
         $this->assertPaymentRetry('-2', 'failed');
     }
 
+    public function test_duplicate_pending_cancellation_and_failure_callbacks_preserve_their_first_transition(): void
+    {
+        foreach ([['0', 'pending'], ['-1', 'cancelled'], ['-2', 'failed']] as [$statusCode, $status]) {
+            [, $booking, $payment] = $this->createPaymentFixture('duplicate-'.$status);
+            $payload = $this->notification(['order_id' => $payment->payment_reference, 'payment_id' => 'PAYHERE-duplicate-'.$status, 'status_code' => $statusCode]);
+            $this->post('/api/payments/payhere/notify', $payload)->assertOk();
+            $firstTimestamp = $status === 'cancelled' ? $payment->fresh()->cancelled_at : ($status === 'failed' ? $payment->fresh()->failed_at : null);
+            $this->post('/api/payments/payhere/notify', $payload)->assertOk();
+            $this->assertSame($status, $payment->fresh()->status);
+            $this->assertSame('PAYHERE-duplicate-'.$status, $payment->fresh()->gateway_transaction_id);
+            if ($firstTimestamp) {
+                $this->assertEquals($firstTimestamp, $status === 'cancelled' ? $payment->fresh()->cancelled_at : $payment->fresh()->failed_at);
+            }
+            $this->assertSame('accepted', $booking->fresh()->booking_status);
+        }
+    }
+
     public function test_verified_chargeback_preserves_confirmed_and_completed_bookings(): void
     {
         foreach (['confirmed'] as $bookingStatus) {
@@ -119,6 +136,30 @@ class PayHereNotificationTest extends TestCase
         $this->assertSame('completed', $booking->fresh()->booking_status);
         $this->assertSame('paid', $booking->fresh()->payment_status);
         $this->assertEquals($completedAt, $booking->fresh()->completed_at);
+    }
+
+    public function test_duplicate_chargeback_and_invalid_signed_chargeback_preserve_safe_state(): void
+    {
+        [, $booking, $payment] = $this->createPaymentFixture('duplicate-chargeback', 'paid', 'confirmed', 'paid');
+        $payment->update(['gateway_transaction_id' => 'PAYHERE-duplicate-chargeback', 'paid_at' => now()->subMinute()]);
+        $payload = $this->notification(['order_id' => $payment->payment_reference, 'payment_id' => 'PAYHERE-duplicate-chargeback', 'status_code' => '-3']);
+        $this->post('/api/payments/payhere/notify', $payload)->assertOk();
+        $chargedBackAt = $payment->fresh()->charged_back_at;
+        $this->post('/api/payments/payhere/notify', $payload)->assertOk();
+        $this->assertSame('chargedback', $payment->fresh()->status);
+        $this->assertEquals($chargedBackAt, $payment->fresh()->charged_back_at);
+        $this->assertSame('confirmed', $booking->fresh()->booking_status);
+
+        [, $safeBooking, $safePayment] = $this->createPaymentFixture('invalid-chargeback', 'paid', 'confirmed', 'paid');
+        $safePayment->update(['gateway_transaction_id' => 'PAYHERE-invalid-chargeback', 'paid_at' => now()->subMinute()]);
+        $this->post('/api/payments/payhere/notify', $this->notification([
+            'order_id' => $safePayment->payment_reference,
+            'payment_id' => 'PAYHERE-invalid-chargeback',
+            'status_code' => '-3',
+            'md5sig' => str_repeat('0', 32),
+        ]))->assertForbidden();
+        $this->assertSame('paid', $safePayment->fresh()->status);
+        $this->assertSame('confirmed', $safeBooking->fresh()->booking_status);
     }
 
     public function test_invalid_and_mismatched_callbacks_do_not_mutate_payments(): void
@@ -190,6 +231,7 @@ class PayHereNotificationTest extends TestCase
         $package = ServicePackage::create(['service_id' => $service->id, 'name' => 'Package '.$suffix, 'slug' => 'package-'.$suffix, 'price' => 100, 'status' => 'published']);
         $booking = Booking::create(['booking_reference' => 'BK-'.$suffix, 'customer_id' => $customer->id, 'service_provider_id' => $provider->id, 'service_id' => $service->id, 'service_package_id' => $package->id, 'event_date' => now()->addDays(3)->toDateString(), 'start_time' => '10:00', 'end_time' => '11:00', 'event_location' => 'Test Location', 'total_amount' => 100, 'booking_status' => $bookingStatus, 'payment_status' => $bookingPaymentStatus]);
         $payment = Payment::create(['booking_id' => $booking->id, 'customer_id' => $customer->id, 'payment_reference' => 'PAY-'.$suffix, 'amount' => 100, 'currency' => 'LKR', 'payment_method' => 'card', 'status' => $paymentStatus, 'gateway' => 'payhere']);
+
         return [$customer, $booking, $payment];
     }
 
@@ -223,6 +265,7 @@ class PayHereNotificationTest extends TestCase
         if (! array_key_exists('md5sig', $overrides)) {
             $payload['md5sig'] = strtoupper(md5($payload['merchant_id'].$payload['order_id'].$payload['payhere_amount'].$payload['payhere_currency'].$payload['status_code'].strtoupper(md5('test-secret'))));
         }
+
         return $payload;
     }
 }

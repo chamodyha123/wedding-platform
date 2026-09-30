@@ -39,10 +39,22 @@ return [
         'mode' => env('PAYHERE_MODE', 'sandbox'),
         'merchant_id' => env('PAYHERE_MERCHANT_ID'),
         'merchant_secret' => env('PAYHERE_MERCHANT_SECRET'),
+        'app_id' => env('PAYHERE_APP_ID'),
+        'app_secret' => env('PAYHERE_APP_SECRET'),
         'return_url' => env('PAYHERE_RETURN_URL'),
         'cancel_url' => env('PAYHERE_CANCEL_URL'),
         'notify_url' => env('PAYHERE_NOTIFY_URL'),
         'currency' => env('PAYHERE_CURRENCY', 'LKR'),
+        'retrieval' => [
+            'sandbox' => [
+                'token_url' => 'https://sandbox.payhere.lk/merchant/v1/oauth/token',
+                'search_url' => 'https://sandbox.payhere.lk/merchant/v1/payment/search',
+            ],
+            'live' => [
+                'token_url' => 'https://www.payhere.lk/merchant/v1/oauth/token',
+                'search_url' => 'https://www.payhere.lk/merchant/v1/payment/search',
+            ],
+        ],
     ],
 
 ];
