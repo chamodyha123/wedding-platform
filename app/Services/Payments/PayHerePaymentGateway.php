@@ -46,11 +46,25 @@ class PayHerePaymentGateway
             }
         }
 
-        return array_map('strval', $settings);
+        return array_map(
+            'strval',
+            array_intersect_key(
+                $settings,
+                array_flip([
+                    'mode',
+                    'merchant_id',
+                    'merchant_secret',
+                    'return_url',
+                    'cancel_url',
+                    'notify_url',
+                    'currency',
+                ])
+            )
+        );
     }
 
     /**
-     * @param array<string, string> $notification
+     * @param  array<string, string>  $notification
      */
     public function verifyNotification(array $notification): bool
     {

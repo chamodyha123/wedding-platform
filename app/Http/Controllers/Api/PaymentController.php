@@ -9,6 +9,7 @@ use App\Http\Resources\ProviderPaymentResource;
 use App\Models\Booking;
 use App\Models\Payment;
 use App\Services\Payments\PayHerePaymentGateway;
+use App\Services\Payments\PayHerePaymentReconciler;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +23,7 @@ class PaymentController extends Controller
     public function adminIndex(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'status' => ['nullable', 'string', 'in:pending,processing,paid,failed,cancelled,refunded'],
+            'status' => ['nullable', 'string', 'in:pending,processing,paid,failed,cancelled,refunded,chargedback'],
             'customer_id' => ['nullable', 'integer', 'exists:users,id'],
             'provider_id' => ['nullable', 'integer', 'exists:service_providers,id'],
             'booking_id' => ['nullable', 'integer', 'exists:bookings,id'],
@@ -73,6 +74,32 @@ class PaymentController extends Controller
 
         return response()->json([
             'payment' => (new AdminPaymentResource($payment))->toArray($request),
+        ]);
+    }
+
+    /**
+     * Reconcile one PayHere payment from the admin-only server action.
+     */
+    public function reconcile(Payment $payment, PayHerePaymentReconciler $reconciler): JsonResponse
+    {
+        try {
+            $result = $reconciler->reconcile($payment);
+        } catch (\RuntimeException $exception) {
+            return response()->json([
+                'message' => 'PayHere reconciliation is unavailable.',
+            ], 503);
+        }
+
+        if ($result['outcome'] === 'ineligible') {
+            return response()->json([
+                'message' => 'This payment cannot be reconciled through PayHere.',
+            ], 422);
+        }
+
+        return response()->json([
+            'payment_id' => $payment->id,
+            'payment_reference' => $payment->payment_reference,
+            ...$result,
         ]);
     }
 

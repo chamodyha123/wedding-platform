@@ -13,8 +13,8 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\CustomerProfileController;
 use App\Http\Controllers\Api\MarketplaceController;
-use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PayHereNotificationController;
+use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\ServiceAvailabilityController;
 use App\Http\Controllers\Api\ServiceController;
@@ -550,6 +550,11 @@ Route::middleware([
         Route::get('/payments', [
             PaymentController::class,
             'adminIndex',
+        ]);
+
+        Route::post('/payments/{payment}/reconcile', [
+            PaymentController::class,
+            'reconcile',
         ]);
 
         Route::get('/payments/{id}', [

@@ -8,7 +8,7 @@ use App\Models\Payment;
 use App\Models\Service;
 use App\Models\ServicePackage;
 use Illuminate\Http\Request;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 class PaymentResourceTest extends TestCase
 {
@@ -21,7 +21,8 @@ class PaymentResourceTest extends TestCase
             'amount' => '125000.00',
             'currency' => 'LKR',
             'payment_method' => 'card',
-            'status' => 'paid',
+            'status' => 'chargedback',
+            'charged_back_at' => '2026-09-29 12:00:00',
             'metadata' => ['gateway_response' => 'internal'],
             'gateway_transaction_id' => 'gateway-secret',
         ]);
@@ -54,6 +55,7 @@ class PaymentResourceTest extends TestCase
         $this->assertArrayNotHasKey('metadata', $resource);
         $this->assertArrayNotHasKey('gateway_transaction_id', $resource);
         $this->assertSame('PAY-TEST-001', $resource['payment_reference']);
+        $this->assertNotNull($resource['charged_back_at']);
         $this->assertSame('Photography', $resource['booking']['service']['name']);
     }
 }
