@@ -7,6 +7,7 @@ use App\Models\User;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -97,6 +98,49 @@ class AccountSecurityController extends Controller
 
         return response()->json([
             'message' => 'Password reset successfully. Please log in again.',
+        ]);
+    }
+
+    /**
+     * Change the authenticated user's password while preserving the current session.
+     */
+    public function changePassword(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'current_password' => ['required', 'string'],
+            'password' => ['required', 'confirmed', PasswordRule::defaults()],
+        ]);
+
+        if (! Hash::check($validated['current_password'], $user->password)) {
+            return response()->json([
+                'message' => 'The current password is incorrect.',
+                'errors' => [
+                    'current_password' => ['The current password is incorrect.'],
+                ],
+            ], 422);
+        }
+
+        $currentAccessToken = $user->currentAccessToken();
+
+        DB::transaction(function () use ($user, $validated, $currentAccessToken): void {
+            $user->forceFill([
+                'password' => Hash::make($validated['password']),
+            ])->save();
+
+            $tokens = $user->tokens();
+
+            if ($currentAccessToken) {
+                $tokens->whereKeyNot($currentAccessToken->getKey());
+            }
+
+            $tokens->delete();
+        });
+
+        return response()->json([
+            'message' => 'Password changed successfully.',
         ]);
     }
 }

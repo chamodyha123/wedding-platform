@@ -42,5 +42,10 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute((int) env('PASSWORD_RESET_RATE_LIMIT', 5))
                 ->by(Str::lower((string) $request->input('email')).'|'.$request->ip());
         });
+
+        RateLimiter::for('password-reset-submission', function (Request $request): Limit {
+            return Limit::perMinute((int) env('PASSWORD_RESET_SUBMISSION_RATE_LIMIT', 5))
+                ->by(Str::lower((string) $request->input('email')).'|'.$request->ip());
+        });
     }
 }

@@ -40,7 +40,7 @@ Route::prefix('auth')->group(function () {
     Route::post('/reset-password', [
         AccountSecurityController::class,
         'resetPassword',
-    ]);
+    ])->middleware('throttle:password-reset-submission');
 
     Route::get('/reset-password/{token}', static function (): JsonResponse {
         return response()->json([
@@ -79,6 +79,11 @@ Route::prefix('auth')->group(function () {
             AccountSecurityController::class,
             'sendVerificationNotification',
         ])->middleware('throttle:verification');
+
+        Route::put('/password', [
+            AccountSecurityController::class,
+            'changePassword',
+        ]);
     });
 });
 
