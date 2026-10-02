@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AccountSecurityController;
 use App\Http\Controllers\Api\Admin\AdminBookingController;
 use App\Http\Controllers\Api\Admin\AdminCategoryController;
 use App\Http\Controllers\Api\Admin\AdminCustomerController;
@@ -20,6 +21,7 @@ use App\Http\Controllers\Api\ServiceAvailabilityController;
 use App\Http\Controllers\Api\ServiceController;
 use App\Http\Controllers\Api\ServicePackageController;
 use App\Http\Controllers\Api\ServiceProviderController;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -29,6 +31,27 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::prefix('auth')->group(function () {
+
+    Route::post('/forgot-password', [
+        AccountSecurityController::class,
+        'forgotPassword',
+    ])->middleware('throttle:password-reset');
+
+    Route::post('/reset-password', [
+        AccountSecurityController::class,
+        'resetPassword',
+    ]);
+
+    Route::get('/reset-password/{token}', static function (): JsonResponse {
+        return response()->json([
+            'message' => 'Submit the reset token, email, password, and password_confirmation to reset the password.',
+        ]);
+    })->name('password.reset');
+
+    Route::get('/verify-email/{user}/{hash}', [
+        AccountSecurityController::class,
+        'verifyEmail',
+    ])->middleware('signed')->name('verification.verify');
 
     Route::post('/register', [
         AuthController::class,
@@ -51,6 +74,11 @@ Route::prefix('auth')->group(function () {
             AuthController::class,
             'logout',
         ]);
+
+        Route::post('/email/verification-notification', [
+            AccountSecurityController::class,
+            'sendVerificationNotification',
+        ])->middleware('throttle:verification');
     });
 });
 

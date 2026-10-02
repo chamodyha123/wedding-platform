@@ -32,5 +32,15 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute((int) env('REGISTER_RATE_LIMIT', 5))
                 ->by($request->ip());
         });
+
+        RateLimiter::for('verification', function (Request $request): Limit {
+            return Limit::perMinute((int) env('EMAIL_VERIFICATION_RATE_LIMIT', 6))
+                ->by((string) $request->user()?->getAuthIdentifier());
+        });
+
+        RateLimiter::for('password-reset', function (Request $request): Limit {
+            return Limit::perMinute((int) env('PASSWORD_RESET_RATE_LIMIT', 5))
+                ->by(Str::lower((string) $request->input('email')).'|'.$request->ip());
+        });
     }
 }
