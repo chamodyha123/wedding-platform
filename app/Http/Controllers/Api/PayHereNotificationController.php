@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Payment;
+use App\Notifications\PaymentConfirmedNotification;
 use App\Services\Payments\PayHerePaymentGateway;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -187,6 +188,27 @@ class PayHereNotificationController extends Controller
         $booking->booking_status = 'confirmed';
         $booking->confirmed_at = $now;
         $booking->save();
+
+        /*
+         * This is a database notification written inside the same transaction.
+         * A rollback therefore rolls back both the payment state and the
+         * notification. The paid/status guards above make webhook retries
+         * idempotent and prevent duplicate payment-confirmed notifications.
+         */
+        $customer = $payment->customer()->first();
+
+        if ($customer) {
+            $customer->notify(
+                new PaymentConfirmedNotification(
+                    paymentId: $payment->id,
+                    paymentReference: $payment->payment_reference,
+                    bookingId: $booking->id,
+                    bookingReference: $booking->booking_reference,
+                    amount: (string) $payment->amount,
+                    currency: $payment->currency,
+                )
+            );
+        }
     }
 
     private function processChargeback(Payment $payment, string $paymentId): void
