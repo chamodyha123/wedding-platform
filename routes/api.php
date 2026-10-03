@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\ServicePackageController;
 use App\Http\Controllers\Api\ServiceProviderController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\NotificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -139,6 +140,39 @@ Route::post('/payments/payhere/notify', [
     PayHereNotificationController::class,
     'store',
 ]);
+
+
+/*
+|--------------------------------------------------------------------------
+| Notification Routes
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware('auth:sanctum')
+    ->prefix('notifications')
+    ->group(function () {
+
+        Route::get('/', [
+            NotificationController::class,
+            'index',
+        ]);
+
+        Route::get('/unread', [
+            NotificationController::class,
+            'unread',
+        ]);
+
+        Route::post('/read-all', [
+            NotificationController::class,
+            'markAllAsRead',
+        ]);
+
+        Route::post('/{id}/read', [
+            NotificationController::class,
+            'markAsRead',
+        ]);
+    });
+
 
 /*
 |--------------------------------------------------------------------------

@@ -6,6 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Service;
 use App\Models\ServiceProvider;
+use App\Notifications\BookingAcceptedNotification;
+use App\Notifications\BookingCancelledNotification;
+use App\Notifications\BookingCompletedNotification;
+use App\Notifications\BookingCreatedNotification;
+use App\Notifications\BookingRejectedNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,10 +32,7 @@ class BookingController extends Controller
         }
 
         $bookings = Booking::query()
-            ->where(
-                'customer_id',
-                $user->id
-            )
+            ->where('customer_id', $user->id)
             ->with([
                 'provider:id,business_name,business_slug',
                 'service:id,name,slug',
@@ -41,7 +43,6 @@ class BookingController extends Controller
 
         return response()->json([
             'message' => 'Customer bookings loaded successfully.',
-
             'bookings' => $bookings,
         ]);
     }
@@ -62,14 +63,8 @@ class BookingController extends Controller
         }
 
         $booking = Booking::query()
-            ->where(
-                'customer_id',
-                $user->id
-            )
-            ->where(
-                'id',
-                $id
-            )
+            ->where('customer_id', $user->id)
+            ->where('id', $id)
             ->with([
                 'provider:id,business_name,business_slug,phone,whatsapp,email,city,district',
                 'service:id,name,slug,description',
@@ -85,7 +80,6 @@ class BookingController extends Controller
 
         return response()->json([
             'message' => 'Booking loaded successfully.',
-
             'booking' => $booking,
         ]);
     }
@@ -113,12 +107,6 @@ class BookingController extends Controller
             ],
         ]);
 
-        /*
-         * Ownership protection:
-         *
-         * A customer can only find and cancel
-         * their own bookings.
-         */
         $booking = DB::transaction(function () use (
             $id,
             $user,
@@ -176,6 +164,26 @@ class BookingController extends Controller
 
         if ($booking instanceof JsonResponse) {
             return $booking;
+        }
+
+        /*
+         * Notify provider after successful cancellation.
+         */
+        $booking->loadMissing([
+            'provider.user:id,name,email',
+        ]);
+
+        $providerUser = $booking->provider?->user;
+
+        if ($providerUser) {
+            $providerUser->notify(
+                new BookingCancelledNotification(
+                    bookingId: $booking->id,
+                    bookingReference: $booking->booking_reference,
+                    eventDate: $booking->event_date->toDateString(),
+                    cancellationReason: $booking->cancellation_reason,
+                )
+            );
         }
 
         return response()->json([
@@ -249,21 +257,11 @@ class BookingController extends Controller
             $user,
             $validated
         ) {
-            /*
-             * Only published, non-soft-deleted services
-             * can be booked.
-             */
             $service = Service::with([
                 'provider',
             ])
-                ->where(
-                    'id',
-                    $validated['service_id']
-                )
-                ->where(
-                    'status',
-                    'published'
-                )
+                ->where('id', $validated['service_id'])
+                ->where('status', 'published')
                 ->first();
 
             if (! $service) {
@@ -272,9 +270,6 @@ class BookingController extends Controller
                 ], 422);
             }
 
-            /*
-             * Provider must be active and verified.
-             */
             $provider = $service->provider;
 
             if (
@@ -292,25 +287,19 @@ class BookingController extends Controller
                 ->lockForUpdate()
                 ->first();
 
-            if (! $provider || ! $provider->is_active || $provider->verification_status !== 'verified') {
+            if (
+                ! $provider ||
+                ! $provider->is_active ||
+                $provider->verification_status !== 'verified'
+            ) {
                 return response()->json([
                     'message' => 'The selected service provider is not currently available for bookings.',
                 ], 422);
             }
 
-            /*
-             * Package must belong to the selected service
-             * and must be published.
-             */
             $package = $service->packages()
-                ->where(
-                    'id',
-                    $validated['service_package_id']
-                )
-                ->where(
-                    'status',
-                    'published'
-                )
+                ->where('id', $validated['service_package_id'])
+                ->where('status', 'published')
                 ->first();
 
             if (! $package) {
@@ -319,14 +308,8 @@ class BookingController extends Controller
                 ], 422);
             }
 
-            /*
-             * Check whether the whole date is unavailable.
-             */
             $fullDayUnavailable = $service->availabilities()
-                ->whereDate(
-                    'date',
-                    $validated['event_date']
-                )
+                ->whereDate('date', $validated['event_date'])
                 ->whereNull('start_time')
                 ->whereNull('end_time')
                 ->whereIn(
@@ -345,31 +328,13 @@ class BookingController extends Controller
                 ], 422);
             }
 
-            /*
-             * Requested time must fit completely inside
-             * at least one available time slot.
-             */
             $availableSlotExists = $service->availabilities()
-                ->whereDate(
-                    'date',
-                    $validated['event_date']
-                )
-                ->where(
-                    'status',
-                    'available'
-                )
+                ->whereDate('date', $validated['event_date'])
+                ->where('status', 'available')
                 ->whereNotNull('start_time')
                 ->whereNotNull('end_time')
-                ->where(
-                    'start_time',
-                    '<=',
-                    $validated['start_time']
-                )
-                ->where(
-                    'end_time',
-                    '>=',
-                    $validated['end_time']
-                )
+                ->where('start_time', '<=', $validated['start_time'])
+                ->where('end_time', '>=', $validated['end_time'])
                 ->exists();
 
             if (! $availableSlotExists) {
@@ -378,20 +343,9 @@ class BookingController extends Controller
                 ], 422);
             }
 
-            /*
-             * Prevent overlapping bookings for this provider.
-             *
-             * Rejected, cancelled, and completed bookings
-             * do not block the provider's schedule.
-             */
-            $bookingConflictExists = Booking::where(
-                'service_provider_id',
-                $provider->id
-            )
-                ->whereDate(
-                    'event_date',
-                    $validated['event_date']
-                )
+            $bookingConflictExists = Booking::query()
+                ->where('service_provider_id', $provider->id)
+                ->whereDate('event_date', $validated['event_date'])
                 ->whereIn(
                     'booking_status',
                     [
@@ -400,16 +354,8 @@ class BookingController extends Controller
                         'confirmed',
                     ]
                 )
-                ->where(
-                    'start_time',
-                    '<',
-                    $validated['end_time']
-                )
-                ->where(
-                    'end_time',
-                    '>',
-                    $validated['start_time']
-                )
+                ->where('start_time', '<', $validated['end_time'])
+                ->where('end_time', '>', $validated['start_time'])
                 ->exists();
 
             if ($bookingConflictExists) {
@@ -418,44 +364,48 @@ class BookingController extends Controller
                 ], 409);
             }
 
-            /*
-             * Create the booking atomically.
-             */
             return Booking::create([
                 'booking_reference' => $this->generateBookingReference(),
-
                 'customer_id' => $user->id,
-
                 'service_provider_id' => $provider->id,
-
                 'service_id' => $service->id,
-
                 'service_package_id' => $package->id,
-
                 'event_date' => $validated['event_date'],
-
                 'start_time' => $validated['start_time'],
-
                 'end_time' => $validated['end_time'],
-
                 'event_location' => $validated['event_location'] ?? null,
-
                 'customer_notes' => $validated['customer_notes'] ?? null,
-
-                /*
-                         * Price comes from PostgreSQL,
-                         * never from customer input.
-                         */
                 'total_amount' => $package->price,
-
                 'booking_status' => 'pending',
-
                 'payment_status' => 'unpaid',
             ]);
         });
 
         if ($booking instanceof JsonResponse) {
             return $booking;
+        }
+
+        /*
+         * Notify provider after successful booking creation.
+         */
+        $booking->loadMissing([
+            'customer:id,name',
+            'provider.user:id,name,email',
+            'service:id,name',
+        ]);
+
+        $providerUser = $booking->provider?->user;
+
+        if ($providerUser) {
+            $providerUser->notify(
+                new BookingCreatedNotification(
+                    bookingId: $booking->id,
+                    bookingReference: $booking->booking_reference,
+                    serviceName: $booking->service->name,
+                    eventDate: $booking->event_date->toDateString(),
+                    customerName: $booking->customer->name,
+                )
+            );
         }
 
         return response()->json([
@@ -471,8 +421,7 @@ class BookingController extends Controller
     }
 
     /**
-     * Get all bookings received by the
-     * authenticated service provider.
+     * Get all bookings received by the authenticated provider.
      */
     public function providerIndex(
         Request $request
@@ -485,8 +434,7 @@ class BookingController extends Controller
             ], 403);
         }
 
-        $provider =
-            $user->serviceProvider()->first();
+        $provider = $user->serviceProvider()->first();
 
         if (! $provider) {
             return response()->json([
@@ -494,12 +442,6 @@ class BookingController extends Controller
             ], 404);
         }
 
-        /*
-         * Ownership protection:
-         *
-         * Only bookings belonging to this provider
-         * are returned.
-         */
         $bookings = $provider->bookings()
             ->with([
                 'customer:id,name,email',
@@ -512,14 +454,12 @@ class BookingController extends Controller
 
         return response()->json([
             'message' => 'Provider bookings loaded successfully.',
-
             'bookings' => $bookings,
         ]);
     }
 
     /**
-     * Get one booking belonging to the
-     * authenticated service provider.
+     * Get one booking belonging to the authenticated provider.
      */
     public function providerShow(
         Request $request,
@@ -533,8 +473,7 @@ class BookingController extends Controller
             ], 403);
         }
 
-        $provider =
-            $user->serviceProvider()->first();
+        $provider = $user->serviceProvider()->first();
 
         if (! $provider) {
             return response()->json([
@@ -543,10 +482,7 @@ class BookingController extends Controller
         }
 
         $booking = $provider->bookings()
-            ->where(
-                'id',
-                $id
-            )
+            ->where('id', $id)
             ->with([
                 'customer:id,name,email',
                 'service:id,name,slug,description',
@@ -562,7 +498,6 @@ class BookingController extends Controller
 
         return response()->json([
             'message' => 'Provider booking loaded successfully.',
-
             'booking' => $booking,
         ]);
     }
@@ -582,8 +517,7 @@ class BookingController extends Controller
             ], 403);
         }
 
-        $provider =
-            $user->serviceProvider()->first();
+        $provider = $user->serviceProvider()->first();
 
         if (! $provider) {
             return response()->json([
@@ -597,18 +531,12 @@ class BookingController extends Controller
             ], 403);
         }
 
-        if (
-            $provider->verification_status !==
-            'verified'
-        ) {
+        if ($provider->verification_status !== 'verified') {
             return response()->json([
                 'message' => 'Your business must be verified before managing bookings.',
             ], 403);
         }
 
-        /*
-         * Provider can only find their own booking.
-         */
         $validated = $request->validate([
             'provider_notes' => [
                 'nullable',
@@ -656,6 +584,23 @@ class BookingController extends Controller
             return $booking;
         }
 
+        /*
+         * Notify customer after successful acceptance.
+         */
+        $booking->loadMissing([
+            'customer:id,name,email',
+            'service:id,name',
+        ]);
+
+        $booking->customer->notify(
+            new BookingAcceptedNotification(
+                bookingId: $booking->id,
+                bookingReference: $booking->booking_reference,
+                serviceName: $booking->service->name,
+                eventDate: $booking->event_date->toDateString(),
+            )
+        );
+
         return response()->json([
             'message' => 'Booking accepted successfully.',
 
@@ -682,8 +627,7 @@ class BookingController extends Controller
             ], 403);
         }
 
-        $provider =
-            $user->serviceProvider()->first();
+        $provider = $user->serviceProvider()->first();
 
         if (! $provider) {
             return response()->json([
@@ -697,10 +641,7 @@ class BookingController extends Controller
             ], 403);
         }
 
-        if (
-            $provider->verification_status !==
-            'verified'
-        ) {
+        if ($provider->verification_status !== 'verified') {
             return response()->json([
                 'message' => 'Your business must be verified before managing bookings.',
             ], 403);
@@ -752,6 +693,23 @@ class BookingController extends Controller
             return $booking;
         }
 
+        /*
+         * Notify customer after successful rejection.
+         */
+        $booking->loadMissing([
+            'customer:id,name,email',
+            'service:id,name',
+        ]);
+
+        $booking->customer->notify(
+            new BookingRejectedNotification(
+                bookingId: $booking->id,
+                bookingReference: $booking->booking_reference,
+                serviceName: $booking->service->name,
+                providerNotes: $booking->provider_notes,
+            )
+        );
+
         return response()->json([
             'message' => 'Booking rejected successfully.',
 
@@ -778,8 +736,7 @@ class BookingController extends Controller
             ], 403);
         }
 
-        $provider =
-            $user->serviceProvider()->first();
+        $provider = $user->serviceProvider()->first();
 
         if (! $provider) {
             return response()->json([
@@ -793,26 +750,14 @@ class BookingController extends Controller
             ], 403);
         }
 
-        if (
-            $provider->verification_status !==
-            'verified'
-        ) {
+        if ($provider->verification_status !== 'verified') {
             return response()->json([
                 'message' => 'Your business must be verified before managing bookings.',
             ], 403);
         }
 
-        /*
-         * Ownership protection:
-         *
-         * Provider can only complete bookings
-         * belonging to their own business.
-         */
         $booking = $provider->bookings()
-            ->where(
-                'id',
-                $id
-            )
+            ->where('id', $id)
             ->first();
 
         if (! $booking) {
@@ -821,38 +766,38 @@ class BookingController extends Controller
             ], 404);
         }
 
-        /*
-         * Payment processing will move an accepted
-         * booking to confirmed.
-         *
-         * Only confirmed bookings may be completed.
-         */
-        if (
-            $booking->booking_status !==
-            'confirmed'
-        ) {
+        if ($booking->booking_status !== 'confirmed') {
             return response()->json([
                 'message' => 'Only confirmed bookings can be completed.',
             ], 422);
         }
 
-        /*
-         * Prevent completing a booking before
-         * the scheduled event date.
-         */
         if ($booking->event_date->isFuture()) {
             return response()->json([
                 'message' => 'A booking cannot be completed before its event date.',
             ], 422);
         }
 
-        $booking->booking_status =
-            'completed';
-
-        $booking->completed_at =
-            now();
-
+        $booking->booking_status = 'completed';
+        $booking->completed_at = now();
         $booking->save();
+
+        /*
+         * Notify customer after successful completion.
+         */
+        $booking->loadMissing([
+            'customer:id,name,email',
+            'service:id,name',
+        ]);
+
+        $booking->customer->notify(
+            new BookingCompletedNotification(
+                bookingId: $booking->id,
+                bookingReference: $booking->booking_reference,
+                serviceName: $booking->service->name,
+                completedAt: $booking->completed_at->toISOString(),
+            )
+        );
 
         return response()->json([
             'message' => 'Booking completed successfully.',
@@ -867,10 +812,6 @@ class BookingController extends Controller
 
     /**
      * Generate a unique booking reference.
-     *
-     * Example:
-     *
-     * BK-20260918-A1B2C3
      */
     private function generateBookingReference(): string
     {
