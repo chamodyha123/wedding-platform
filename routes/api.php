@@ -83,6 +83,16 @@ Route::prefix('auth')->group(function () {
         'resetPassword',
     ])->middleware('throttle:password-reset-submission');
 
+    Route::post('/password/otp/send', [
+        AccountSecurityController::class,
+        'sendPasswordResetOtp',
+    ])->middleware('throttle:password-reset-otp-send');
+
+    Route::post('/password/otp/reset', [
+        AccountSecurityController::class,
+        'resetPasswordWithOtp',
+    ])->middleware('throttle:password-reset-otp-reset');
+
     Route::get('/reset-password/{token}', static function (): JsonResponse {
         return response()->json([
             'message' => 'Submit the reset token, email, password, and password_confirmation to reset the password.',
