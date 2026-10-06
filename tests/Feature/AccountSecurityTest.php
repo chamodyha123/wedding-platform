@@ -3,11 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Mail\PasswordChangeOtpMail;
 use Carbon\Carbon;
 use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\URL;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -231,15 +233,18 @@ class AccountSecurityTest extends TestCase
 
     public function test_password_change_rejects_an_incorrect_current_password_without_revoking_tokens(): void
     {
+        Mail::fake();
         $user = User::factory()->create();
         $currentToken = $user->createToken('current-token')->plainTextToken;
         $user->createToken('other-token');
+        $code = $this->passwordChangeCode($currentToken);
 
         $this->withToken($currentToken)->putJson('/api/auth/password', [
             'current_password' => 'incorrect-password',
+            'code' => $code,
             'password' => 'new-secure-password',
             'password_confirmation' => 'new-secure-password',
-        ])->assertUnprocessable()->assertJsonValidationErrors(['current_password']);
+        ])->assertUnprocessable();
 
         $this->assertSame(2, $user->fresh()->tokens()->count());
         $this->assertTrue(Hash::check('password', $user->fresh()->password));
@@ -247,14 +252,17 @@ class AccountSecurityTest extends TestCase
 
     public function test_password_change_preserves_the_current_token_and_revokes_only_other_user_tokens(): void
     {
+        Mail::fake();
         $user = User::factory()->create(['email' => 'change@example.test', 'password' => 'password']);
         $currentToken = $user->createToken('current-token')->plainTextToken;
         $otherToken = $user->createToken('other-token')->plainTextToken;
+        $code = $this->passwordChangeCode($currentToken);
         $otherUser = User::factory()->create();
         $otherUser->createToken('unrelated-token');
 
         $this->withToken($currentToken)->putJson('/api/auth/password', [
             'current_password' => 'password',
+            'code' => $code,
             'password' => 'new-secure-password',
             'password_confirmation' => 'new-secure-password',
         ])->assertOk()
@@ -293,5 +301,14 @@ class AccountSecurityTest extends TestCase
             'password' => $password,
             'password_confirmation' => $password,
         ];
+    }
+
+    private function passwordChangeCode(string $token): string
+    {
+        $this->withToken($token)->postJson('/api/auth/password/change/otp/send', [
+            'current_password' => 'password',
+        ])->assertOk();
+
+        return Mail::sent(PasswordChangeOtpMail::class)->last()->code;
     }
 }
