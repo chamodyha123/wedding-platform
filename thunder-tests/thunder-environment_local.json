@@ -1,0 +1,25 @@
+{
+  "client": "Thunder Client",
+  "environmentName": "Wedding Marketplace Local",
+  "environmentId": "e3a92f3d-60c2-4d22-9ce6-197e8c148d31",
+  "dateExported": "2026-09-22T00:00:00.000Z",
+  "version": "1.2",
+  "global": false,
+  "local": false,
+  "variables": [
+    { "name": "baseUrl", "value": "http://127.0.0.1:8000/api" },
+    { "name": "serviceSlug", "value": "wedding-photography" },
+    { "name": "providerSlug", "value": "kasun-wedding-photography" },
+    { "name": "completedBookingId", "value": "" },
+    { "name": "reviewId", "value": "" },
+    { "name": "customerEmail", "value": "" },
+    { "name": "customerPassword", "value": "", "secret": true },
+    { "name": "customerToken", "value": "", "secret": true },
+    { "name": "otherCustomerEmail", "value": "" },
+    { "name": "otherCustomerPassword", "value": "", "secret": true },
+    { "name": "otherCustomerToken", "value": "", "secret": true },
+    { "name": "providerEmail", "value": "" },
+    { "name": "providerPassword", "value": "", "secret": true },
+    { "name": "providerToken", "value": "", "secret": true }
+  ]
+}
