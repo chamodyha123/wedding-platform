@@ -58,6 +58,9 @@ class AppServiceProvider extends ServiceProvider
                 ->by(Str::lower(trim((string) $request->input('email'))).'|'.$request->ip());
         });
 
+        RateLimiter::for('password-change-otp-send', fn (Request $request): Limit => Limit::perMinute(5)->by((string) $request->user()?->id.'|'.$request->ip()));
+        RateLimiter::for('password-change', fn (Request $request): Limit => Limit::perMinute(10)->by((string) $request->user()?->id.'|'.$request->ip()));
+
         RateLimiter::for('google-auth', function (Request $request): Limit {
             return Limit::perMinute((int) env('GOOGLE_AUTH_RATE_LIMIT', 10))
                 ->by($request->ip());

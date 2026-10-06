@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\AccountSecurity\PasswordChangeOtpService;
 use App\Services\AccountSecurity\PasswordResetOtpService;
 use App\Services\AccountSecurity\RegistrationOtpService;
 use Illuminate\Auth\Events\Verified;
@@ -155,40 +156,33 @@ class AccountSecurityController extends Controller
     /**
      * Change the authenticated user's password while preserving the current session.
      */
-    public function changePassword(Request $request): JsonResponse
+    public function sendPasswordChangeOtp(Request $request, PasswordChangeOtpService $service): JsonResponse
+    {
+        $validated = $request->validate(['current_password' => ['required', 'string']]);
+
+        if (! $service->issue($request->user(), $validated['current_password'])) {
+            return response()->json(['message' => 'Unable to send a password change code.'], 422);
+        }
+
+        return response()->json(['message' => 'A password change code has been sent.']);
+    }
+
+    public function changePassword(Request $request, PasswordChangeOtpService $service): JsonResponse
     {
         /** @var User $user */
         $user = $request->user();
 
         $validated = $request->validate([
             'current_password' => ['required', 'string'],
+            'code' => ['required', 'digits:6'],
             'password' => ['required', 'confirmed', PasswordRule::defaults()],
         ]);
 
-        if (! Hash::check($validated['current_password'], $user->password)) {
+        if (! $service->change($user, $user->currentAccessToken()?->getKey(), $validated['current_password'], $validated['code'], $validated['password'])) {
             return response()->json([
-                'message' => 'The current password is incorrect.',
-                'errors' => [
-                    'current_password' => ['The current password is incorrect.'],
-                ],
+                'message' => 'Unable to change the password with the provided credentials.',
             ], 422);
         }
-
-        $currentAccessToken = $user->currentAccessToken();
-
-        DB::transaction(function () use ($user, $validated, $currentAccessToken): void {
-            $user->forceFill([
-                'password' => Hash::make($validated['password']),
-            ])->save();
-
-            $tokens = $user->tokens();
-
-            if ($currentAccessToken) {
-                $tokens->whereKeyNot($currentAccessToken->getKey());
-            }
-
-            $tokens->delete();
-        });
 
         return response()->json([
             'message' => 'Password changed successfully.',

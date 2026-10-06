@@ -116,6 +116,11 @@ Route::prefix('auth')->group(function () {
 
     Route::middleware('auth:sanctum')->group(function () {
 
+        Route::post('/password/change/otp/send', [
+            AccountSecurityController::class,
+            'sendPasswordChangeOtp',
+        ])->middleware('throttle:password-change-otp-send');
+
         Route::post('/email/otp/send', [AccountSecurityController::class, 'sendRegistrationOtp'])->middleware('throttle:registration-otp-send');
         Route::post('/email/otp/verify', [AccountSecurityController::class, 'verifyRegistrationOtp'])->middleware('throttle:registration-otp-verify');
 
@@ -137,7 +142,7 @@ Route::prefix('auth')->group(function () {
         Route::put('/password', [
             AccountSecurityController::class,
             'changePassword',
-        ]);
+        ])->middleware('throttle:password-change');
     });
 });
 
