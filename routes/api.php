@@ -106,6 +106,9 @@ Route::prefix('auth')->group(function () {
 
     Route::middleware('auth:sanctum')->group(function () {
 
+        Route::post('/email/otp/send', [AccountSecurityController::class, 'sendRegistrationOtp'])->middleware('throttle:registration-otp-send');
+        Route::post('/email/otp/verify', [AccountSecurityController::class, 'verifyRegistrationOtp'])->middleware('throttle:registration-otp-verify');
+
         Route::get('/me', [
             AuthController::class,
             'me',

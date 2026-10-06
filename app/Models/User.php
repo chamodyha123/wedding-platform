@@ -93,4 +93,9 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->hasMany(UserSocialAccount::class);
     }
+
+    public function accountSecurityOtps(): HasMany
+    {
+        return $this->hasMany(AccountSecurityOtp::class);
+    }
 }
