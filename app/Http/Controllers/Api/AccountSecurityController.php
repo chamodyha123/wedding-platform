@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\AccountSecurity\PasswordResetOtpService;
 use App\Services\AccountSecurity\RegistrationOtpService;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\JsonResponse;
@@ -109,6 +110,38 @@ class AccountSecurityController extends Controller
         });
 
         if ($status !== Password::PASSWORD_RESET) {
+            return response()->json([
+                'message' => 'Unable to reset the password with the provided credentials.',
+            ], 422);
+        }
+
+        return response()->json([
+            'message' => 'Password reset successfully. Please log in again.',
+        ]);
+    }
+
+    public function sendPasswordResetOtp(Request $request, PasswordResetOtpService $service): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'string', 'email', 'max:255'],
+        ]);
+
+        $service->issue($validated['email']);
+
+        return response()->json([
+            'message' => 'If an account exists for this email, a password reset code has been sent.',
+        ]);
+    }
+
+    public function resetPasswordWithOtp(Request $request, PasswordResetOtpService $service): JsonResponse
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'string', 'email', 'max:255'],
+            'code' => ['required', 'digits:6'],
+            'password' => ['required', 'confirmed', PasswordRule::defaults()],
+        ]);
+
+        if (! $service->reset($validated['email'], $validated['code'], $validated['password'])) {
             return response()->json([
                 'message' => 'Unable to reset the password with the provided credentials.',
             ], 422);
