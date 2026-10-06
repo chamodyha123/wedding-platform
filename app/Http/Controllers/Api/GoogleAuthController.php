@@ -17,14 +17,14 @@ use Laravel\Socialite\Two\InvalidStateException;
 
 class GoogleAuthController extends Controller
 {
-    private const Provider = 'google';
+    protected const Provider = 'google';
 
     /**
      * Redirect a visitor to Google's state-protected authorization flow.
      */
     public function redirect(): RedirectResponse
     {
-        return $this->googleDriver()->redirect();
+        return $this->socialDriver()->redirect();
     }
 
     /**
@@ -33,11 +33,11 @@ class GoogleAuthController extends Controller
     public function link(Request $request): RedirectResponse
     {
         $request->session()->put(
-            'google_link_user_id',
+            $this->linkSessionKey(),
             $request->user()->getAuthIdentifier()
         );
 
-        return $this->googleDriver()->redirect();
+        return $this->socialDriver()->redirect();
     }
 
     /**
@@ -47,31 +47,31 @@ class GoogleAuthController extends Controller
     {
         if ($request->filled('error') || ! $request->filled('code')) {
             return response()->json([
-                'message' => 'Google authentication was not completed.',
+                'message' => $this->providerLabel().' authentication was not completed.',
             ], 422);
         }
 
         try {
-            $googleUser = $this->googleDriver()->user();
+            $socialUser = $this->socialDriver()->user();
         } catch (InvalidStateException) {
             return response()->json([
-                'message' => 'Google authentication state is invalid or expired.',
+                'message' => $this->providerLabel().' authentication state is invalid or expired.',
             ], 403);
         } catch (\Throwable) {
             return response()->json([
-                'message' => 'Google authentication could not be completed.',
+                'message' => $this->providerLabel().' authentication could not be completed.',
             ], 422);
         }
 
-        $providerUserId = trim((string) $googleUser->getId());
+        $providerUserId = trim((string) $socialUser->getId());
 
         if ($providerUserId === '') {
             return response()->json([
-                'message' => 'Google did not provide a valid identity.',
+                'message' => $this->providerLabel().' did not provide a valid identity.',
             ], 422);
         }
 
-        $linkingUserId = $request->session()->pull('google_link_user_id');
+        $linkingUserId = $request->session()->pull($this->linkSessionKey());
 
         if ($linkingUserId !== null) {
             return $this->linkGoogleIdentity((int) $linkingUserId, $providerUserId);
@@ -79,7 +79,7 @@ class GoogleAuthController extends Controller
 
         $socialAccount = UserSocialAccount::query()
             ->with('user.roles')
-            ->where('provider', self::Provider)
+            ->where('provider', static::Provider)
             ->where('provider_user_id', $providerUserId)
             ->first();
 
@@ -87,28 +87,27 @@ class GoogleAuthController extends Controller
             return $this->authenticationResponse($socialAccount->user);
         }
 
-        $email = $googleUser->getEmail();
+        $email = $socialUser->getEmail();
 
         if (! is_string($email) || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return response()->json([
-                'message' => 'Google did not provide an email required for account creation.',
+                'message' => $this->providerLabel().' did not provide an email required for account creation.',
             ], 422);
         }
 
         if (User::query()->where('email', $email)->exists()) {
             return response()->json([
-                'message' => 'Sign in to your existing account before linking Google.',
+                'message' => 'Sign in to your existing account before linking '.$this->providerLabel().'.',
             ], 409);
         }
 
-        $rawGoogleIdentity = $googleUser->getRaw();
-        $emailVerified = ($rawGoogleIdentity['email_verified'] ?? false) === true;
+        $emailVerified = $this->emailIsVerified($socialUser->getRaw());
 
         try {
             $user = DB::transaction(function () use (
                 $email,
                 $emailVerified,
-                $googleUser,
+                $socialUser,
                 $providerUserId
             ): User {
                 if (User::query()->where('email', $email)->lockForUpdate()->exists()) {
@@ -116,7 +115,7 @@ class GoogleAuthController extends Controller
                 }
 
                 $user = User::create([
-                    'name' => $this->nameFor($googleUser->getName(), $email),
+                    'name' => $this->nameFor($socialUser->getName(), $email),
                     'email' => $email,
                     'password' => Hash::make(bin2hex(random_bytes(32))),
                 ]);
@@ -131,7 +130,7 @@ class GoogleAuthController extends Controller
 
                 UserSocialAccount::create([
                     'user_id' => $user->id,
-                    'provider' => self::Provider,
+                    'provider' => static::Provider,
                     'provider_user_id' => $providerUserId,
                 ]);
 
@@ -139,7 +138,7 @@ class GoogleAuthController extends Controller
             });
         } catch (\Throwable) {
             return response()->json([
-                'message' => 'Google authentication could not be completed.',
+                'message' => $this->providerLabel().' authentication could not be completed.',
             ], 409);
         }
 
@@ -149,9 +148,9 @@ class GoogleAuthController extends Controller
     /**
      * Configure Google with only the identity scopes required by this application.
      */
-    private function googleDriver(): Provider
+    protected function socialDriver(): Provider
     {
-        return Socialite::driver(self::Provider)->setScopes([
+        return Socialite::driver(static::Provider)->setScopes([
             'openid',
             'profile',
             'email',
@@ -161,16 +160,16 @@ class GoogleAuthController extends Controller
     /**
      * Link a validated identity to the user that initiated this browser session.
      */
-    private function linkGoogleIdentity(int $userId, string $providerUserId): JsonResponse
+    protected function linkGoogleIdentity(int $userId, string $providerUserId): JsonResponse
     {
         $existingIdentity = UserSocialAccount::query()
-            ->where('provider', self::Provider)
+            ->where('provider', static::Provider)
             ->where('provider_user_id', $providerUserId)
             ->first();
 
         if ($existingIdentity !== null) {
             return response()->json([
-                'message' => 'This Google identity is already linked to an account.',
+                'message' => 'This '.$this->providerLabel().' identity is already linked to an account.',
             ], 409);
         }
 
@@ -178,39 +177,39 @@ class GoogleAuthController extends Controller
 
         if ($user === null) {
             return response()->json([
-                'message' => 'Google linking could not be completed.',
+                'message' => $this->providerLabel().' linking could not be completed.',
             ], 422);
         }
 
-        if ($user->socialAccounts()->where('provider', self::Provider)->exists()) {
+        if ($user->socialAccounts()->where('provider', static::Provider)->exists()) {
             return response()->json([
-                'message' => 'Your account already has a linked Google identity.',
+                'message' => 'Your account already has a linked '.$this->providerLabel().' identity.',
             ], 409);
         }
 
         try {
             $user->socialAccounts()->create([
-                'provider' => self::Provider,
+                'provider' => static::Provider,
                 'provider_user_id' => $providerUserId,
             ]);
         } catch (\Throwable) {
             return response()->json([
-                'message' => 'Google linking could not be completed.',
+                'message' => $this->providerLabel().' linking could not be completed.',
             ], 409);
         }
 
         return response()->json([
-            'message' => 'Google identity linked successfully.',
+            'message' => $this->providerLabel().' identity linked successfully.',
         ]);
     }
 
     /**
      * Issue the standard application token without exposing provider credentials.
      */
-    private function authenticationResponse(User $user, int $status = 200): JsonResponse
+    protected function authenticationResponse(User $user, int $status = 200): JsonResponse
     {
         return response()->json([
-            'message' => 'Google authentication successful.',
+            'message' => $this->providerLabel().' authentication successful.',
             'user' => $user->load('roles'),
             'token' => $user->createToken('api-token')->plainTextToken,
         ], $status);
@@ -219,8 +218,34 @@ class GoogleAuthController extends Controller
     /**
      * Use Google's display name only as an initial local name.
      */
-    private function nameFor(?string $name, string $email): string
+    protected function nameFor(?string $name, string $email): string
     {
         return filled($name) ? mb_substr($name, 0, 255) : Str::before($email, '@');
+    }
+
+    /**
+     * Determine whether the provider explicitly verified the returned email.
+     *
+     * @param  array<string, mixed>  $identity
+     */
+    protected function emailIsVerified(array $identity): bool
+    {
+        return ($identity['email_verified'] ?? false) === true;
+    }
+
+    /**
+     * Distinguish linking intent between providers in the session.
+     */
+    protected function linkSessionKey(): string
+    {
+        return static::Provider.'_link_user_id';
+    }
+
+    /**
+     * Return the provider name for controlled user-facing responses.
+     */
+    protected function providerLabel(): string
+    {
+        return 'Google';
     }
 }

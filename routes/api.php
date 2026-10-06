@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\Admin\ProviderVerificationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\CustomerProfileController;
+use App\Http\Controllers\Api\FacebookAuthController;
 use App\Http\Controllers\Api\GoogleAuthController;
 use App\Http\Controllers\Api\MarketplaceController;
 use App\Http\Controllers\Api\NotificationController;
@@ -49,6 +50,25 @@ Route::prefix('auth')->group(function () {
     Route::middleware(['web', 'auth:sanctum', 'throttle:google-auth'])->group(function () {
         Route::get('/google/link', [
             GoogleAuthController::class,
+            'link',
+        ]);
+    });
+
+    Route::middleware(['web', 'throttle:facebook-auth'])->group(function () {
+        Route::get('/facebook/redirect', [
+            FacebookAuthController::class,
+            'redirect',
+        ]);
+
+        Route::get('/facebook/callback', [
+            FacebookAuthController::class,
+            'callback',
+        ]);
+    });
+
+    Route::middleware(['web', 'auth:sanctum', 'throttle:facebook-auth'])->group(function () {
+        Route::get('/facebook/link', [
+            FacebookAuthController::class,
             'link',
         ]);
     });

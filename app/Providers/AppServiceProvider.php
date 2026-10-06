@@ -52,5 +52,10 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute((int) env('GOOGLE_AUTH_RATE_LIMIT', 10))
                 ->by($request->ip());
         });
+
+        RateLimiter::for('facebook-auth', function (Request $request): Limit {
+            return Limit::perMinute((int) env('FACEBOOK_AUTH_RATE_LIMIT', 10))
+                ->by($request->ip());
+        });
     }
 }
