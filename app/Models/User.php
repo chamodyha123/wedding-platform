@@ -85,4 +85,12 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->hasOne(CustomerProfile::class);
     }
+
+    /**
+     * External identities linked to this local user.
+     */
+    public function socialAccounts(): HasMany
+    {
+        return $this->hasMany(UserSocialAccount::class);
+    }
 }
