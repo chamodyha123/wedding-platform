@@ -35,6 +35,12 @@ return [
         ],
     ],
 
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI'),
+    ],
+
     'payhere' => [
         'mode' => env('PAYHERE_MODE', 'sandbox'),
         'merchant_id' => env('PAYHERE_MERCHANT_ID'),

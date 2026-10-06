@@ -13,7 +13,9 @@ use App\Http\Controllers\Api\Admin\ProviderVerificationController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BookingController;
 use App\Http\Controllers\Api\CustomerProfileController;
+use App\Http\Controllers\Api\GoogleAuthController;
 use App\Http\Controllers\Api\MarketplaceController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PayHereNotificationController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ReviewController;
@@ -23,7 +25,6 @@ use App\Http\Controllers\Api\ServicePackageController;
 use App\Http\Controllers\Api\ServiceProviderController;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\NotificationController;
 
 /*
 |--------------------------------------------------------------------------
@@ -32,6 +33,25 @@ use App\Http\Controllers\Api\NotificationController;
 */
 
 Route::prefix('auth')->group(function () {
+
+    Route::middleware(['web', 'throttle:google-auth'])->group(function () {
+        Route::get('/google/redirect', [
+            GoogleAuthController::class,
+            'redirect',
+        ]);
+
+        Route::get('/google/callback', [
+            GoogleAuthController::class,
+            'callback',
+        ]);
+    });
+
+    Route::middleware(['web', 'auth:sanctum', 'throttle:google-auth'])->group(function () {
+        Route::get('/google/link', [
+            GoogleAuthController::class,
+            'link',
+        ]);
+    });
 
     Route::post('/forgot-password', [
         AccountSecurityController::class,
@@ -141,7 +161,6 @@ Route::post('/payments/payhere/notify', [
     'store',
 ]);
 
-
 /*
 |--------------------------------------------------------------------------
 | Notification Routes
@@ -172,7 +191,6 @@ Route::middleware('auth:sanctum')
             'markAsRead',
         ]);
     });
-
 
 /*
 |--------------------------------------------------------------------------
