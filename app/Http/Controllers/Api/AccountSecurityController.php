@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\AccountSecurity\RegistrationOtpService;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,6 +16,23 @@ use Illuminate\Validation\Rules\Password as PasswordRule;
 
 class AccountSecurityController extends Controller
 {
+    public function sendRegistrationOtp(Request $request, RegistrationOtpService $service): JsonResponse
+    {
+        $service->issue($request->user());
+
+        return response()->json(['message' => 'If email verification is needed, a verification code has been sent.']);
+    }
+
+    public function verifyRegistrationOtp(Request $request, RegistrationOtpService $service): JsonResponse
+    {
+        $validated = $request->validate(['code' => ['required', 'digits:6']]);
+        if (! $service->verify($request->user(), $validated['code'])) {
+            return response()->json(['message' => 'The verification code is invalid or expired.'], 422);
+        }
+
+        return response()->json(['message' => 'Email verified successfully.']);
+    }
+
     /**
      * Send a verification email to the authenticated user when needed.
      */

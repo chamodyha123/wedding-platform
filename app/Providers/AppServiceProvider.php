@@ -57,5 +57,8 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute((int) env('FACEBOOK_AUTH_RATE_LIMIT', 10))
                 ->by($request->ip());
         });
+
+        RateLimiter::for('registration-otp-send', fn (Request $request): Limit => Limit::perMinute(5)->by((string) $request->user()?->id.'|'.$request->ip()));
+        RateLimiter::for('registration-otp-verify', fn (Request $request): Limit => Limit::perMinute(10)->by((string) $request->user()?->id.'|'.$request->ip()));
     }
 }
