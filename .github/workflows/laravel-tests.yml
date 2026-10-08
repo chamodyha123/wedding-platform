@@ -36,11 +36,10 @@ jobs:
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: "8.3"
+          php-version: "8.4"
           extensions: bcmath, curl, dom, fileinfo, mbstring, pdo_sqlite, sqlite3, xml
           tools: composer:v2
           coverage: none
-          cache: composer
 
       - name: Install Composer dependencies
         run: composer install --no-interaction --prefer-dist --no-progress
