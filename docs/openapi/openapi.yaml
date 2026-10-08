@@ -1,0 +1,2268 @@
+openapi: 3.1.0
+info:
+  title: Wedding Marketplace API
+  version: 1.0.0
+  description: |
+    Authoritative contract for the Wedding Marketplace Laravel API.
+    Paths include the `/api` prefix used by the application.
+    Booking states observed in the implementation are pending, accepted, rejected,
+    confirmed, completed and cancelled. Providers accept/reject pending bookings;
+    customers may cancel pending/accepted bookings; successful payment for an accepted
+    booking changes it to confirmed/paid; providers may complete confirmed bookings once
+    the event date has arrived. A matching PayHere chargeback can mark a paid payment
+    chargedback.
+servers:
+  - url: /
+    description: Application origin
+tags:
+  - name: Authentication
+  - name: Account security
+  - name: Marketplace
+  - name: Notifications
+  - name: Customer
+    description: All customer routes require a Sanctum bearer token and customer role. Owned booking/review/payment resources are scoped to the authenticated customer.
+  - name: Provider
+    description: Provider routes require a Sanctum bearer token and service_provider role. Service, availability, and booking mutations additionally enforce provider ownership and, where applicable, active/verified status.
+  - name: Admin
+    description: All admin routes require a Sanctum bearer token and admin role.
+  - name: Payments
+paths:
+  /api/auth/google/redirect:
+    get:
+      operationId: redirectToGoogle
+      tags: [Authentication]
+      summary: Start Google sign-in
+      description: Public browser-session OAuth redirect, limited to 10/minute per IP by default; redirects to Google.
+      responses:
+        '302':
+          description: Redirect to Google authorization.
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/google/callback:
+    get:
+      operationId: googleCallback
+      tags: [Authentication]
+      summary: Complete Google sign-in or account linking
+      description: |
+        Public browser-session OAuth callback, limited to 10/minute per IP by default. A successful first sign-in
+        creates a customer account; linking is selected by session state created by the
+        authenticated `/api/auth/google/link` flow. OAuth provider query parameters are
+        supplied by Google. The callback returns JSON; invalid/expired state is rejected.
+      parameters:
+        - { name: code, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/OAuthCallbackResult' }
+        '201': { $ref: '#/components/responses/AuthenticationResult' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/google/link:
+    get:
+      operationId: linkGoogleAccount
+      tags: [Authentication]
+      summary: Start linking a Google identity
+      description: Authenticated browser-session OAuth redirect, limited to 10/minute per IP by default.
+      security:
+        - sanctumBearer: []
+      responses:
+        '302':
+          description: Redirect to Google authorization.
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/facebook/redirect:
+    get:
+      operationId: redirectToFacebook
+      tags: [Authentication]
+      summary: Start Facebook sign-in
+      description: Public browser-session OAuth redirect, limited to 10/minute per IP by default; requests the email permission.
+      responses:
+        '302':
+          description: Redirect to Facebook authorization.
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/facebook/callback:
+    get:
+      operationId: facebookCallback
+      tags: [Authentication]
+      summary: Complete Facebook sign-in or account linking
+      description: |
+        Public browser-session OAuth callback, limited to 10/minute per IP by default. New accounts receive the
+        customer role. This flow does not treat Facebook email as verified. The callback
+        returns JSON; OAuth provider query parameters are supplied by Facebook.
+      parameters:
+        - { name: code, in: query, schema: { type: string } }
+        - { name: state, in: query, schema: { type: string } }
+        - { name: error, in: query, schema: { type: string } }
+      responses:
+        '200': { $ref: '#/components/responses/OAuthCallbackResult' }
+        '201': { $ref: '#/components/responses/AuthenticationResult' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/facebook/link:
+    get:
+      operationId: linkFacebookAccount
+      tags: [Authentication]
+      summary: Start linking a Facebook identity
+      description: Authenticated browser-session OAuth redirect, limited to 10/minute per IP by default.
+      security:
+        - sanctumBearer: []
+      responses:
+        '302':
+          description: Redirect to Facebook authorization.
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/forgot-password:
+    post:
+      operationId: requestPasswordResetLink
+      tags: [Account security]
+      summary: Request a password reset link
+      description: Public; email existence is not disclosed. Default limit is 5 requests/minute per normalized email and IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/reset-password:
+    post:
+      operationId: resetPasswordWithLink
+      tags: [Account security]
+      summary: Reset a password using a reset token
+      description: Public legacy password-broker flow; successful reset revokes all Sanctum tokens. Default limit is 5 requests/minute per normalized email and IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordResetLinkRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/reset-password/{token}:
+    get:
+      operationId: showPasswordResetTokenInstructions
+      tags: [Account security]
+      summary: Return password-reset submission instructions
+      description: Public informational endpoint; it does not reset the password.
+      parameters:
+        - $ref: '#/components/parameters/Token'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/auth/verify-email/{user}/{hash}:
+    get:
+      operationId: verifyEmail
+      tags: [Account security]
+      summary: Verify an email address
+      description: Public signed-link endpoint. The signature and user email hash must be valid.
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+        - $ref: '#/components/parameters/Hash'
+        - { name: signature, in: query, required: true, schema: { type: string } }
+        - { name: expires, in: query, schema: { type: integer }, description: Expiration timestamp included by the emailed temporary signed URL. }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/auth/register:
+    post:
+      operationId: register
+      tags: [Authentication]
+      summary: Register a customer or service provider
+      description: Public; role is restricted to customer or service_provider. Rate-limited by IP (default 5/minute).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RegisterRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/AuthenticationResult' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/login:
+    post:
+      operationId: login
+      tags: [Authentication]
+      summary: Create a Sanctum bearer token
+      description: Public; default limit 10/minute per normalized email and IP. Invalid credentials return 401.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/AuthenticationResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/password/change/otp/send:
+    post:
+      operationId: sendPasswordChangeOtp
+      tags: [Account security]
+      summary: Send an OTP for an authenticated password change
+      description: |
+        Requires a Sanctum token. Requires the current password. The OTP is purpose-isolated
+        from reset OTPs, expires after 10 minutes, has a 60-second resend cooldown and at
+        most 5 verification attempts. Send limit is 5/minute per user and IP.
+      security:
+        - sanctumBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CurrentPasswordRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/email/otp/send:
+    post:
+      operationId: sendRegistrationOtp
+      tags: [Account security]
+      summary: Send the authenticated user's email-verification OTP
+      description: Requires Sanctum. Six digits; expires in 10 minutes; 60-second resend cooldown; five attempts; default limit 5/minute per user and IP.
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/email/otp/verify:
+    post:
+      operationId: verifyRegistrationOtp
+      tags: [Account security]
+      summary: Verify the authenticated user's email with an OTP
+      description: Requires Sanctum. The six-digit code is purpose-isolated, expires after 10 minutes, and allows at most five attempts; default limit 10/minute per user and IP.
+      security:
+        - sanctumBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpCodeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/me:
+    get:
+      operationId: getCurrentUser
+      tags: [Authentication]
+      summary: Get the authenticated user
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/auth/logout:
+    post:
+      operationId: logout
+      tags: [Authentication]
+      summary: Revoke the current Sanctum token
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/auth/email/verification-notification:
+    post:
+      operationId: resendEmailVerification
+      tags: [Account security]
+      summary: Send a signed email-verification link if needed
+      description: Requires Sanctum; default limit 6/minute per user.
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/password:
+    put:
+      operationId: changePassword
+      tags: [Account security]
+      summary: Change the authenticated user's password
+      description: |
+        Requires Sanctum and all four fields. The six-digit code must be an unexpired,
+        unused password-change OTP, not a password-reset OTP. OTPs expire after 10 minutes,
+        have a 60-second resend cooldown and five verification attempts. The current token
+        remains valid; other tokens are revoked. Default limit 10/minute per user and IP.
+      security:
+        - sanctumBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordChangeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/password/otp/send:
+    post:
+      operationId: sendPasswordResetOtp
+      tags: [Account security]
+      summary: Send a public password-reset OTP
+      description: |
+        Public and does not disclose whether the email exists. This OTP is purpose-isolated
+        from password-change and registration OTPs; it expires after 10 minutes, has a
+        60-second resend cooldown and five verification attempts. Limit 5/minute per email and IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EmailRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/auth/password/otp/reset:
+    post:
+      operationId: resetPasswordWithOtp
+      tags: [Account security]
+      summary: Reset a password using the public reset OTP
+      description: Public; requires the email and password-reset-purpose OTP. A successful reset revokes all Sanctum tokens and invalidates remaining reset OTPs. Limit 10/minute per email and IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PasswordResetOtpRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /api/marketplace/categories:
+    get:
+      operationId: listMarketplaceCategories
+      tags: [Marketplace]
+      summary: List active marketplace categories
+      description: Public; includes counts of published services and verified active providers.
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+  /api/marketplace/categories/{slug}:
+    get:
+      operationId: getMarketplaceCategory
+      tags: [Marketplace]
+      summary: Get an active category by slug
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/marketplace/providers:
+    get:
+      operationId: searchMarketplaceProviders
+      tags: [Marketplace]
+      summary: Search verified and active providers
+      description: |
+        Public filters: category slug, city, district, free-text search, sort
+        (newest, oldest, name_asc, name_desc, rating_high, rating_low), and per_page
+        (1-100). Results are paginated; default page size is 15.
+      parameters:
+        - { name: category, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: city, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: district, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: search, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: sort, in: query, schema: { type: string, enum: [newest, oldest, name_asc, name_desc, rating_high, rating_low] } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/marketplace/providers/{slug}:
+    get:
+      operationId: getMarketplaceProvider
+      tags: [Marketplace]
+      summary: Get a public provider profile by slug
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/marketplace/services:
+    get:
+      operationId: searchMarketplaceServices
+      tags: [Marketplace]
+      summary: Search published services
+      description: |
+        Public filters: category, city, district, provider, search, sort
+        (newest, oldest, name_asc, name_desc, rating_high, rating_low), featured,
+        min_price, max_price, min_rating, and per_page (1-100; default 15).
+        Results are restricted to verified, active providers. max_price cannot be
+        lower than min_price when both are supplied.
+      parameters:
+        - { name: category, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: city, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: district, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: provider, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: search, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: sort, in: query, schema: { type: string, enum: [newest, oldest, name_asc, name_desc, rating_high, rating_low] } }
+        - { name: featured, in: query, schema: { type: boolean } }
+        - { name: min_price, in: query, schema: { type: number, minimum: 0 } }
+        - { name: max_price, in: query, schema: { type: number, minimum: 0 } }
+        - { name: min_rating, in: query, schema: { type: number, minimum: 1, maximum: 5 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/marketplace/services/{slug}/reviews:
+    get:
+      operationId: listMarketplaceServiceReviews
+      tags: [Marketplace]
+      summary: List public reviews for a service
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - { name: rating, in: query, schema: { type: integer, minimum: 1, maximum: 5 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/marketplace/services/{slug}:
+    get:
+      operationId: getMarketplaceService
+      tags: [Marketplace]
+      summary: Get a public service by slug
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/payments/payhere/notify:
+    post:
+      operationId: receivePayHereNotification
+      tags: [Payments]
+      summary: Receive a PayHere server notification
+      description: |
+        Public gateway callback. The controller validates the required PayHere fields and
+        verifies the MD5 signature using configured merchant credentials, then checks the
+        trusted order, amount, currency, and gateway transaction identity. Payment/booking
+        rows are locked during state changes; duplicate or stale notifications do not repeat
+        transitions or payment-confirmed notifications. Never send merchant secrets here.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PayHereNotification' }
+          application/x-www-form-urlencoded:
+            schema: { $ref: '#/components/schemas/PayHereNotification' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/notifications:
+    get:
+      operationId: listNotifications
+      tags: [Notifications]
+      summary: List the authenticated user's notifications
+      security:
+        - sanctumBearer: []
+      parameters:
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+      responses:
+        '200': { $ref: '#/components/responses/NotificationList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/notifications/unread:
+    get:
+      operationId: listUnreadNotifications
+      tags: [Notifications]
+      summary: List the authenticated user's unread notifications
+      security:
+        - sanctumBearer: []
+      parameters:
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+      responses:
+        '200': { $ref: '#/components/responses/NotificationList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/notifications/read-all:
+    post:
+      operationId: markAllNotificationsRead
+      tags: [Notifications]
+      summary: Mark all of the authenticated user's unread notifications as read
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/NotificationsReadAllResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/notifications/{id}/read:
+    post:
+      operationId: markNotificationRead
+      tags: [Notifications]
+      summary: Mark an owned notification as read
+      description: Notification lookup is scoped to the authenticated user.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200': { $ref: '#/components/responses/NotificationReadResult' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/customer/profile:
+    get:
+      operationId: getCustomerProfile
+      tags: [Customer]
+      summary: Get the authenticated customer's profile
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: saveCustomerProfile
+      tags: [Customer]
+      summary: Create or update the authenticated customer's profile
+      security:
+        - sanctumBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomerProfileRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/customer/bookings:
+    get:
+      operationId: listCustomerBookings
+      tags: [Customer]
+      summary: List the authenticated customer's bookings
+      description: Results are scoped to the authenticated customer; this endpoint returns a collection, not a paginator.
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createCustomerBooking
+      tags: [Customer]
+      summary: Create a booking
+      description: |
+        Customer-only. The selected service must be published and its provider verified and
+        active. A successful booking starts in pending state. Event date must be today or
+        later, and end_time must follow start_time.
+      security:
+        - sanctumBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateBookingRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/customer/bookings/{id}:
+    get:
+      operationId: getCustomerBooking
+      tags: [Customer]
+      summary: Get an owned booking
+      description: Booking lookup is scoped to the authenticated customer.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/customer/bookings/{id}/cancel:
+    post:
+      operationId: cancelCustomerBooking
+      tags: [Customer]
+      summary: Cancel an owned booking
+      description: Customer-only; only pending or accepted bookings can be cancelled. Active payment attempts are cancelled and payment status is set to unpaid.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BookingCancellationRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/customer/bookings/{bookingId}/reviews:
+    post:
+      operationId: createBookingReview
+      tags: [Customer]
+      summary: Review a completed booking
+      description: Customer-only; booking ownership is checked, only completed bookings can be reviewed, and a booking can have only one review.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/customer/reviews:
+    get:
+      operationId: listCustomerReviews
+      tags: [Customer]
+      summary: List the authenticated customer's reviews
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/customer/reviews/{id}:
+    get:
+      operationId: getCustomerReview
+      tags: [Customer]
+      summary: Get an owned review
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: updateCustomerReview
+      tags: [Customer]
+      summary: Update an owned review
+      description: At least one of rating or comment must be provided.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReviewUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      operationId: deleteCustomerReview
+      tags: [Customer]
+      summary: Delete an owned review
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/customer/payments:
+    get:
+      operationId: listCustomerPayments
+      tags: [Payments]
+      summary: List the authenticated customer's payments
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/customer/payments/{id}:
+    get:
+      operationId: getCustomerPayment
+      tags: [Payments]
+      summary: Get an owned payment
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/customer/bookings/{bookingId}/payments:
+    post:
+      operationId: initiateBookingPayment
+      tags: [Payments]
+      summary: Start a payment attempt for an owned booking
+      description: |
+        Customer-only. Only accepted, unpaid bookings are eligible and only one active
+        pending/processing attempt is allowed. `card` starts PayHere checkout and returns
+        checkout details; `bank_transfer` does not. PayHere configuration and a customer
+        profile are required for card checkout.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentStartRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /api/customer/bookings/{bookingId}/payments/{paymentId}/success:
+    post:
+      operationId: confirmMockPaymentSuccess
+      tags: [Payments]
+      summary: Mark a payment successful in local/testing
+      description: Development/mock endpoint. Returns 404 outside local and testing; production success is confirmed only by the verified PayHere callback or reconciliation.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/customer/bookings/{bookingId}/payments/{paymentId}/fail:
+    post:
+      operationId: markMockPaymentFailed
+      tags: [Payments]
+      summary: Mark a payment failed in local/testing
+      description: Development/mock endpoint. Returns 404 outside local and testing; an active payment on an accepted booking is required.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/PaymentId'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MockPaymentFailureRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/customer/bookings/{bookingId}/payments/{paymentId}/cancel:
+    post:
+      operationId: cancelMockPayment
+      tags: [Payments]
+      summary: Cancel a payment attempt in local/testing
+      description: Development/mock endpoint. Returns 404 outside local and testing.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/BookingId'
+        - $ref: '#/components/parameters/PaymentId'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/provider/profile:
+    post:
+      operationId: createProviderProfile
+      tags: [Provider]
+      summary: Create the authenticated provider's business profile
+      description: Requires the service_provider role. New profiles start pending and active; categories must be valid category IDs.
+      security:
+        - sanctumBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProviderProfileCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    get:
+      operationId: getProviderProfile
+      tags: [Provider]
+      summary: Get the authenticated provider's business profile
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: updateProviderProfile
+      tags: [Provider]
+      summary: Update the authenticated provider's business profile
+      description: Requires the service_provider role; only the authenticated provider's profile is updated.
+      security:
+        - sanctumBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProviderProfileUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/provider/categories:
+    get:
+      operationId: listProviderCategories
+      tags: [Provider]
+      summary: List categories assigned to the authenticated provider
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      operationId: updateProviderCategories
+      tags: [Provider]
+      summary: Replace the provider's assigned categories
+      security:
+        - sanctumBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProviderCategoriesRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/provider/dashboard:
+    get:
+      operationId: getProviderDashboard
+      tags: [Provider]
+      summary: Get the provider dashboard
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/provider/reviews:
+    get:
+      operationId: listProviderReviews
+      tags: [Provider]
+      summary: List reviews for the authenticated provider
+      security:
+        - sanctumBearer: []
+      parameters:
+        - { name: rating, in: query, schema: { type: integer, minimum: 1, maximum: 5 } }
+        - { name: service_id, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/provider/reviews/{id}:
+    get:
+      operationId: getProviderReview
+      tags: [Provider]
+      summary: Get a review visible to the authenticated provider
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/provider/payments:
+    get:
+      operationId: listProviderPayments
+      tags: [Payments]
+      summary: List payments visible to the authenticated provider
+      description: Results are limited to the provider's bookings.
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/provider/payments/{id}:
+    get:
+      operationId: getProviderPayment
+      tags: [Payments]
+      summary: Get a payment visible to the authenticated provider
+      description: Payment visibility is scoped to the provider's bookings.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/provider/bookings:
+    get:
+      operationId: listProviderBookings
+      tags: [Provider]
+      summary: List the authenticated provider's bookings
+      description: Results are scoped to the authenticated provider.
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/provider/bookings/{id}:
+    get:
+      operationId: getProviderBooking
+      tags: [Provider]
+      summary: Get a booking owned by the authenticated provider
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/provider/bookings/{id}/accept:
+    post:
+      operationId: acceptProviderBooking
+      tags: [Provider]
+      summary: Accept a pending booking
+      description: Requires an active, verified provider account; only pending bookings can be accepted. `provider_notes` is optional.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProviderNotesRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/provider/bookings/{id}/reject:
+    post:
+      operationId: rejectProviderBooking
+      tags: [Provider]
+      summary: Reject a pending booking
+      description: Requires an active, verified provider account; only pending bookings can be rejected. `provider_notes` is optional.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProviderNotesRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/provider/bookings/{id}/complete:
+    post:
+      operationId: completeProviderBooking
+      tags: [Provider]
+      summary: Complete a confirmed booking
+      description: Requires an active, verified provider account; only confirmed bookings whose event date has arrived can be completed.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/provider/services:
+    get:
+      operationId: listProviderServices
+      tags: [Provider]
+      summary: List the authenticated provider's services
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      operationId: createProviderService
+      tags: [Provider]
+      summary: Create a provider service
+      description: Requires an active, verified provider; category must be assigned to that provider. Default status is draft.
+      security:
+        - sanctumBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServiceCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/provider/services/{id}:
+    get:
+      operationId: getProviderService
+      tags: [Provider]
+      summary: Get a service owned by the authenticated provider
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: updateProviderService
+      tags: [Provider]
+      summary: Update a service owned by the authenticated provider
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ServiceUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      operationId: deleteProviderService
+      tags: [Provider]
+      summary: Delete a service owned by the authenticated provider
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/provider/services/{serviceId}/packages:
+    get:
+      operationId: listServicePackages
+      tags: [Provider]
+      summary: List packages for a provider-owned service
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: createServicePackage
+      tags: [Provider]
+      summary: Create a package for a provider-owned service
+      description: Requires an active, verified provider; default package status is draft.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PackageCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/provider/services/{serviceId}/packages/{packageId}:
+    get:
+      operationId: getServicePackage
+      tags: [Provider]
+      summary: Get a package of a provider-owned service
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+        - $ref: '#/components/parameters/PackageId'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      operationId: updateServicePackage
+      tags: [Provider]
+      summary: Update a package of a provider-owned service
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+        - $ref: '#/components/parameters/PackageId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PackageUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+    delete:
+      operationId: deleteServicePackage
+      tags: [Provider]
+      summary: Delete a package of a provider-owned service
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+        - $ref: '#/components/parameters/PackageId'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/provider/services/{serviceId}/availability:
+    get:
+      operationId: listServiceAvailability
+      tags: [Provider]
+      summary: List availability for a provider-owned service
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      operationId: createServiceAvailability
+      tags: [Provider]
+      summary: Create an availability slot
+      description: Requires an active, verified provider. Dates must be today or later; start/end times use 24-hour HH:mm format.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AvailabilityCreateRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/Created' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/provider/services/{serviceId}/availability/{availabilityId}:
+    put:
+      operationId: updateServiceAvailability
+      tags: [Provider]
+      summary: Update an availability slot
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+        - $ref: '#/components/parameters/AvailabilityId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AvailabilityUpdateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    delete:
+      operationId: deleteServiceAvailability
+      tags: [Provider]
+      summary: Delete an availability slot
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+        - $ref: '#/components/parameters/AvailabilityId'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/admin/providers:
+    get:
+      operationId: listAdminProviders
+      tags: [Admin]
+      summary: List providers for administrators
+      description: Requires the admin role.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - { name: search, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: verification_status, in: query, schema: { type: string, enum: [pending, under_review, verified, rejected, changes_requested, suspended] } }
+        - { name: is_active, in: query, schema: { type: boolean } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/admin/providers/pending:
+    get:
+      operationId: listPendingProviders
+      tags: [Admin]
+      summary: List providers pending verification
+      description: Admin-only; paginated at 20 records per page.
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/admin/providers/{id}:
+    get:
+      operationId: getAdminProvider
+      tags: [Admin]
+      summary: Get a provider for verification
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/admin/providers/{id}/approve:
+    post:
+      operationId: approveAdminProvider
+      tags: [Admin]
+      summary: Approve a provider
+      description: Admin-only verification action.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminProviderNotesRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/providers/{id}/reject:
+    post:
+      operationId: rejectAdminProvider
+      tags: [Admin]
+      summary: Reject a provider
+      description: Admin-only verification action.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminProviderNotesRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/providers/{id}/request-changes:
+    post:
+      operationId: requestAdminProviderChanges
+      tags: [Admin]
+      summary: Request provider profile changes
+      description: Admin-only verification action.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminProviderNotesRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/providers/{id}/suspend:
+    post:
+      operationId: suspendAdminProvider
+      tags: [Admin]
+      summary: Suspend a provider
+      description: Admin-only provider management action.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminProviderNotesRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /api/admin/dashboard:
+    get:
+      operationId: getAdminDashboard
+      tags: [Admin]
+      summary: Get the administrator dashboard
+      security:
+        - sanctumBearer: []
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/admin/bookings:
+    get:
+      operationId: listAdminBookings
+      tags: [Admin]
+      summary: List marketplace bookings
+      description: |
+        Administrator-only; newest first and paginated (default 15, maximum 100).
+        Supports booking_status, customer_id, provider_id, service_id, event_date,
+        event_date_from, event_date_to and substring search of booking reference.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - { name: booking_status, in: query, schema: { type: string, enum: [pending, accepted, rejected, confirmed, completed, cancelled] } }
+        - { name: customer_id, in: query, schema: { type: integer } }
+        - { name: provider_id, in: query, schema: { type: integer } }
+        - { name: service_id, in: query, schema: { type: integer } }
+        - { name: event_date, in: query, schema: { type: string, format: date } }
+        - { name: event_date_from, in: query, schema: { type: string, format: date } }
+        - { name: event_date_to, in: query, schema: { type: string, format: date } }
+        - { name: search, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/admin/bookings/{id}:
+    get:
+      operationId: getAdminBooking
+      tags: [Admin]
+      summary: Get a marketplace booking
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/admin/customers:
+    get:
+      operationId: listAdminCustomers
+      tags: [Admin]
+      summary: List customers
+      security:
+        - sanctumBearer: []
+      parameters:
+        - { name: search, in: query, schema: { type: string, maxLength: 255 }, description: Search customer name or email. }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/admin/customers/{id}:
+    get:
+      operationId: getAdminCustomer
+      tags: [Admin]
+      summary: Get a customer
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/admin/reviews:
+    get:
+      operationId: listAdminReviews
+      tags: [Admin]
+      summary: List reviews
+      security:
+        - sanctumBearer: []
+      parameters:
+        - { name: rating, in: query, schema: { type: integer, minimum: 1, maximum: 5 } }
+        - { name: service_id, in: query, schema: { type: integer } }
+        - { name: provider_id, in: query, schema: { type: integer } }
+        - { name: customer_id, in: query, schema: { type: integer } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/admin/reviews/{id}:
+    get:
+      operationId: getAdminReview
+      tags: [Admin]
+      summary: Get a review
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/admin/reports/overview:
+    get:
+      operationId: getAdminReportsOverview
+      tags: [Admin]
+      summary: Get the reporting overview
+      security:
+        - sanctumBearer: []
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date }, description: Must be on or after from when from is supplied. }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/admin/services:
+    get:
+      operationId: listAdminServices
+      tags: [Admin]
+      summary: List services for administrators
+      security:
+        - sanctumBearer: []
+      parameters:
+        - { name: search, in: query, schema: { type: string, maxLength: 255 } }
+        - { name: provider_id, in: query, schema: { type: integer } }
+        - { name: category_id, in: query, schema: { type: integer } }
+        - { name: status, in: query, schema: { type: string, enum: [draft, published, inactive] } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/admin/services/{id}:
+    get:
+      operationId: getAdminService
+      tags: [Admin]
+      summary: Get a service for administrators
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/admin/categories:
+    get:
+      operationId: listAdminCategories
+      tags: [Admin]
+      summary: List categories for administrators
+      security:
+        - sanctumBearer: []
+      parameters:
+        - { name: is_active, in: query, schema: { type: boolean } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/admin/categories/{id}:
+    get:
+      operationId: getAdminCategory
+      tags: [Admin]
+      summary: Get a category for administrators
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/admin/payments:
+    get:
+      operationId: listAdminPayments
+      tags: [Payments]
+      summary: List payments for administrators
+      description: Filter by status, customer_id, provider_id, booking_id and per_page (1-100; default 15). Sorted newest first.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, processing, paid, failed, cancelled, refunded, chargedback] } }
+        - { name: customer_id, in: query, schema: { type: integer } }
+        - { name: provider_id, in: query, schema: { type: integer } }
+        - { name: booking_id, in: query, schema: { type: integer } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/admin/payments/{id}:
+    get:
+      operationId: getAdminPayment
+      tags: [Payments]
+      summary: Get a payment for administrators
+      security:
+        - sanctumBearer: []
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/admin/payments/{payment}/reconcile:
+    post:
+      operationId: reconcileAdminPayment
+      tags: [Payments]
+      summary: Reconcile a PayHere payment
+      description: |
+        Admin-only server-side retrieval and reconciliation. The payment must belong to
+        PayHere. Candidate transaction identity, order reference, amount and currency are
+        matched; ambiguous/no-match/unsupported/refund states do not mutate payment state.
+        A matching received transaction can confirm an accepted booking; a matching
+        chargeback can mark an already-paid payment chargedback. Repeated reconciliation is
+        safe and does not duplicate confirmation notifications.
+      security:
+        - sanctumBearer: []
+      parameters:
+        - name: payment
+          in: path
+          required: true
+          description: Payment model identifier.
+          schema: { type: integer }
+      responses:
+        '200': { $ref: '#/components/responses/Success' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+components:
+  securitySchemes:
+    sanctumBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum personal access token
+      description: 'Obtain using register/login/OAuth response; send as Authorization: Bearer <token>.'
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+    NotificationId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserId:
+      name: user
+      in: path
+      required: true
+      schema: { type: integer }
+    Hash:
+      name: hash
+      in: path
+      required: true
+      schema: { type: string }
+    Token:
+      name: token
+      in: path
+      required: true
+      schema: { type: string }
+    Slug:
+      name: slug
+      in: path
+      required: true
+      schema: { type: string }
+    BookingId:
+      name: bookingId
+      in: path
+      required: true
+      schema: { type: integer }
+    PaymentId:
+      name: paymentId
+      in: path
+      required: true
+      schema: { type: integer }
+    ServiceId:
+      name: serviceId
+      in: path
+      required: true
+      schema: { type: integer }
+    PackageId:
+      name: packageId
+      in: path
+      required: true
+      schema: { type: integer }
+    AvailabilityId:
+      name: availabilityId
+      in: path
+      required: true
+      schema: { type: integer }
+  responses:
+    AuthenticationResult:
+      description: Authentication succeeded and a Sanctum personal access token was issued.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AuthenticationResult' }
+    OAuthCallbackResult:
+      description: OAuth callback authenticated the user or completed identity linking.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - { $ref: '#/components/schemas/AuthenticationResult' }
+              - { $ref: '#/components/schemas/MessageResult' }
+    NotificationList:
+      description: Paginated notifications belonging to the authenticated user.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/NotificationList' }
+    NotificationReadResult:
+      description: Notification marked as read.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/NotificationReadResult' }
+    NotificationsReadAllResult:
+      description: All unread notifications marked as read.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/NotificationsReadAllResult' }
+    Success:
+      description: Successful JSON response. See the endpoint description for the returned object shape.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiObject' }
+    Created:
+      description: Resource or payment attempt created successfully.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiObject' }
+    ValidationError:
+      description: Request validation failed (Laravel JSON validation response).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationError' }
+    Unauthorized:
+      description: Missing/invalid bearer token or invalid credentials.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Authenticated user lacks the required role/permission, or a signature check failed.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Requested resource not found or not visible to the caller.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: The request conflicts with the current resource state.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unprocessable:
+      description: The request is valid JSON but cannot be completed in the current state.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Named route rate limit exceeded.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServiceUnavailable:
+      description: PayHere checkout or retrieval is not configured/available.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    ApiObject:
+      type: object
+      description: |
+        Successful response object. Known top-level response members are typed below.
+        Nested model/resource objects are intentionally extensible because exposed fields
+        vary by endpoint and the application serializes several different Eloquent models.
+      properties:
+        message: { type: string }
+        user: { $ref: '#/components/schemas/UserResponse' }
+        token: { type: string }
+        profile: { $ref: '#/components/schemas/CustomerProfileResponse' }
+        booking: { $ref: '#/components/schemas/BookingResponse' }
+        bookings:
+          oneOf:
+            - type: array
+              items: { $ref: '#/components/schemas/BookingResponse' }
+            - { $ref: '#/components/schemas/JsonObject' }
+        review: { $ref: '#/components/schemas/JsonObject' }
+        reviews:
+          oneOf:
+            - type: array
+              items: { $ref: '#/components/schemas/JsonObject' }
+            - { $ref: '#/components/schemas/JsonObject' }
+        payment: { $ref: '#/components/schemas/PaymentResponse' }
+        payments:
+          oneOf:
+            - type: array
+              items: { $ref: '#/components/schemas/PaymentResponse' }
+            - { $ref: '#/components/schemas/JsonObject' }
+        checkout: { $ref: '#/components/schemas/JsonObject' }
+        provider: { $ref: '#/components/schemas/AdminProviderResponse' }
+        providers:
+          oneOf:
+            - type: array
+              items: { $ref: '#/components/schemas/AdminProviderResponse' }
+            - { $ref: '#/components/schemas/JsonObject' }
+        service: { $ref: '#/components/schemas/AdminServiceResponse' }
+        services:
+          oneOf:
+            - type: array
+              items: { $ref: '#/components/schemas/AdminServiceResponse' }
+            - { $ref: '#/components/schemas/JsonObject' }
+        customer: { $ref: '#/components/schemas/AdminCustomerResponse' }
+        customers:
+          oneOf:
+            - type: array
+              items: { $ref: '#/components/schemas/AdminCustomerResponse' }
+            - { $ref: '#/components/schemas/JsonObject' }
+        category: { $ref: '#/components/schemas/AdminCategoryResponse' }
+        categories:
+          oneOf:
+            - type: array
+              items: { $ref: '#/components/schemas/AdminCategoryResponse' }
+            - { $ref: '#/components/schemas/JsonObject' }
+        package: { $ref: '#/components/schemas/JsonObject' }
+        availability: { $ref: '#/components/schemas/JsonObject' }
+        notifications:
+          type: array
+          items: { $ref: '#/components/schemas/Notification' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+        count: { type: integer }
+        updated_count: { type: integer }
+      additionalProperties: true
+    AdminCustomerResponse:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, format: email }
+        email_verified_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: [string, 'null'], format: date-time }
+        updated_at: { type: [string, 'null'], format: date-time }
+        bookings_count: { type: integer }
+        reviews_count: { type: integer }
+      additionalProperties: false
+    AdminServiceResponse:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: [string, 'null'] }
+        status: { type: string, enum: [draft, published, inactive] }
+        is_featured: { type: boolean }
+        created_at: { type: [string, 'null'], format: date-time }
+        updated_at: { type: [string, 'null'], format: date-time }
+        packages_count: { type: integer }
+        reviews_count: { type: integer }
+        average_rating: { type: [number, 'null'] }
+        provider: { $ref: '#/components/schemas/JsonObject' }
+        category: { $ref: '#/components/schemas/JsonObject' }
+      additionalProperties: true
+    JsonObject:
+      type: object
+      description: Nested application model or resource object.
+      additionalProperties: true
+    UserResponse:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string, format: email }
+        email_verified_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: [string, 'null'], format: date-time }
+        updated_at: { type: [string, 'null'], format: date-time }
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/JsonObject' }
+      additionalProperties: false
+    CustomerProfileResponse:
+      type: object
+      properties:
+        first_name: { type: string }
+        last_name: { type: string }
+        phone: { type: string }
+        address: { type: string }
+        city: { type: string }
+        country: { type: string }
+        created_at: { type: [string, 'null'], format: date-time }
+        updated_at: { type: [string, 'null'], format: date-time }
+      additionalProperties: false
+    BookingResponse:
+      type: object
+      properties:
+        id: { type: integer }
+        booking_reference: { type: string }
+        customer_id: { type: integer }
+        service_provider_id: { type: integer }
+        service_id: { type: integer }
+        service_package_id: { type: integer }
+        event_date: { type: string, format: date }
+        start_time: { type: string }
+        end_time: { type: string }
+        event_location: { type: [string, 'null'] }
+        customer_notes: { type: [string, 'null'] }
+        provider_notes: { type: [string, 'null'] }
+        cancellation_reason: { type: [string, 'null'] }
+        total_amount: { type: string, pattern: '^[0-9]+(\.[0-9]{2})?$' }
+        booking_status: { type: string, enum: [pending, accepted, rejected, confirmed, completed, cancelled] }
+        payment_status: { type: string, enum: [pending, paid, unpaid] }
+        accepted_at: { type: [string, 'null'], format: date-time }
+        confirmed_at: { type: [string, 'null'], format: date-time }
+        completed_at: { type: [string, 'null'], format: date-time }
+        cancelled_at: { type: [string, 'null'], format: date-time }
+        customer: { $ref: '#/components/schemas/JsonObject' }
+        provider: { $ref: '#/components/schemas/JsonObject' }
+        service: { $ref: '#/components/schemas/JsonObject' }
+        package: { $ref: '#/components/schemas/JsonObject' }
+        payments:
+          type: array
+          items: { $ref: '#/components/schemas/JsonObject' }
+        review: { $ref: '#/components/schemas/JsonObject' }
+      additionalProperties: true
+    PaymentResponse:
+      type: object
+      properties:
+        id: { type: integer }
+        payment_reference: { type: string }
+        booking_id: { type: integer }
+        customer_id: { type: integer }
+        amount: { type: string, pattern: '^[0-9]+(\.[0-9]{2})?$' }
+        currency: { type: string }
+        payment_method: { type: string, enum: [card, bank_transfer] }
+        status: { type: string, enum: [pending, processing, paid, failed, cancelled, refunded, chargedback] }
+        gateway: { type: [string, 'null'] }
+        failure_reason: { type: [string, 'null'] }
+        paid_at: { type: [string, 'null'], format: date-time }
+        failed_at: { type: [string, 'null'], format: date-time }
+        cancelled_at: { type: [string, 'null'], format: date-time }
+        refunded_at: { type: [string, 'null'], format: date-time }
+        charged_back_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: [string, 'null'], format: date-time }
+        updated_at: { type: [string, 'null'], format: date-time }
+        booking: { $ref: '#/components/schemas/JsonObject' }
+      additionalProperties: true
+    AdminProviderResponse:
+      type: object
+      properties:
+        id: { type: integer }
+        business_name: { type: string }
+        business_slug: { type: string }
+        email: { type: [string, 'null'], format: email }
+        phone: { type: [string, 'null'] }
+        city: { type: [string, 'null'] }
+        district: { type: [string, 'null'] }
+        verification_status: { type: string, enum: [pending, under_review, verified, rejected, changes_requested, suspended] }
+        verification_notes: { type: [string, 'null'] }
+        verified_at: { type: [string, 'null'], format: date-time }
+        is_active: { type: boolean }
+        services_count: { type: integer }
+        bookings_count: { type: integer }
+        reviews_count: { type: integer }
+        average_rating: { type: [number, 'null'] }
+        user: { $ref: '#/components/schemas/UserResponse' }
+        categories:
+          type: array
+          items: { $ref: '#/components/schemas/JsonObject' }
+      additionalProperties: true
+    AdminCategoryResponse:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        description: { type: [string, 'null'] }
+        is_active: { type: boolean }
+        services_count: { type: integer }
+        created_at: { type: [string, 'null'], format: date-time }
+        updated_at: { type: [string, 'null'], format: date-time }
+      additionalProperties: true
+    AuthenticationResult:
+      type: object
+      required: [message, user, token]
+      properties:
+        message: { type: string }
+        user: { $ref: '#/components/schemas/JsonObject' }
+        token: { type: string }
+    MessageResult:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+    Pagination:
+      type: object
+      properties:
+        current_page: { type: integer }
+        per_page: { type: integer }
+        total: { type: integer }
+        last_page: { type: integer }
+    Notification:
+      type: object
+      required: [id, data]
+      properties:
+        id: { type: string }
+        type: { type: [string, 'null'] }
+        data: { type: object, additionalProperties: true }
+        read_at: { type: [string, 'null'], format: date-time }
+        created_at: { type: [string, 'null'], format: date-time }
+    NotificationList:
+      type: object
+      required: [message, notifications, pagination]
+      properties:
+        message: { type: string }
+        notifications:
+          type: array
+          items: { $ref: '#/components/schemas/Notification' }
+        pagination: { $ref: '#/components/schemas/Pagination' }
+    NotificationReadResult:
+      type: object
+      required: [message, notification]
+      properties:
+        message: { type: string }
+        notification: { $ref: '#/components/schemas/Notification' }
+    NotificationsReadAllResult:
+      type: object
+      required: [message, updated_count]
+      properties:
+        message: { type: string }
+        updated_count: { type: integer }
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+    ValidationError:
+      type: object
+      required: [message, errors]
+      properties:
+        message: { type: string }
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [name, email, password, password_confirmation, role]
+      properties:
+        name: { type: string, maxLength: 255 }
+        email: { type: string, format: email, maxLength: 255 }
+        password: { type: string, format: password, writeOnly: true }
+        password_confirmation: { type: string, format: password, writeOnly: true }
+        role: { type: string, enum: [customer, service_provider] }
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password, writeOnly: true }
+    EmailRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email: { type: string, format: email, maxLength: 255 }
+    PasswordResetLinkRequest:
+      type: object
+      additionalProperties: false
+      required: [token, email, password, password_confirmation]
+      properties:
+        token: { type: string }
+        email: { type: string, format: email, maxLength: 255 }
+        password: { type: string, format: password, writeOnly: true }
+        password_confirmation: { type: string, format: password, writeOnly: true }
+    PasswordResetOtpRequest:
+      type: object
+      additionalProperties: false
+      required: [email, code, password, password_confirmation]
+      properties:
+        email: { type: string, format: email, maxLength: 255 }
+        code: { type: string, pattern: '^[0-9]{6}$', writeOnly: true }
+        password: { type: string, format: password, writeOnly: true }
+        password_confirmation: { type: string, format: password, writeOnly: true }
+    CurrentPasswordRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password]
+      properties:
+        current_password: { type: string, format: password, writeOnly: true }
+    OtpCodeRequest:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code: { type: string, pattern: '^[0-9]{6}$', writeOnly: true }
+    PasswordChangeRequest:
+      type: object
+      additionalProperties: false
+      required: [current_password, code, password, password_confirmation]
+      properties:
+        current_password: { type: string, format: password, writeOnly: true }
+        code: { type: string, pattern: '^[0-9]{6}$', writeOnly: true }
+        password: { type: string, format: password, writeOnly: true }
+        password_confirmation: { type: string, format: password, writeOnly: true }
+    CustomerProfileRequest:
+      type: object
+      additionalProperties: false
+      required: [first_name, last_name, phone, address, city, country]
+      properties:
+        first_name: { type: string, maxLength: 100 }
+        last_name: { type: string, maxLength: 100 }
+        phone: { type: string, maxLength: 30 }
+        address: { type: string, maxLength: 500 }
+        city: { type: string, maxLength: 100 }
+        country: { type: string, maxLength: 100 }
+    CreateBookingRequest:
+      type: object
+      additionalProperties: false
+      required: [service_id, service_package_id, event_date, start_time, end_time]
+      properties:
+        service_id: { type: integer }
+        service_package_id: { type: integer }
+        event_date: { type: string, format: date }
+        start_time: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+        end_time: { type: string, pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+        event_location: { type: [string, 'null'], maxLength: 500 }
+        customer_notes: { type: [string, 'null'], maxLength: 2000 }
+    BookingCancellationRequest:
+      type: object
+      additionalProperties: false
+      required: [cancellation_reason]
+      properties:
+        cancellation_reason: { type: string, maxLength: 2000 }
+    ReviewCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [rating]
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: [string, 'null'], maxLength: 2000 }
+    ReviewUpdateRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        rating: { type: integer, minimum: 1, maximum: 5 }
+        comment: { type: [string, 'null'], maxLength: 2000 }
+    PaymentStartRequest:
+      type: object
+      additionalProperties: false
+      required: [payment_method]
+      properties:
+        payment_method: { type: string, enum: [card, bank_transfer] }
+    MockPaymentFailureRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        failure_reason: { type: [string, 'null'], maxLength: 2000 }
+    ProviderProfileCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [business_name, category_ids]
+      properties:
+        business_name: { type: string, maxLength: 255 }
+        description: { type: [string, 'null'] }
+        phone: { type: [string, 'null'], maxLength: 30 }
+        whatsapp: { type: [string, 'null'], maxLength: 30 }
+        email: { type: [string, 'null'], format: email, maxLength: 255 }
+        website: { type: [string, 'null'], format: uri, maxLength: 255 }
+        address: { type: [string, 'null'], maxLength: 500 }
+        city: { type: [string, 'null'], maxLength: 100 }
+        district: { type: [string, 'null'], maxLength: 100 }
+        latitude: { type: [number, 'null'], minimum: -90, maximum: 90 }
+        longitude: { type: [number, 'null'], minimum: -180, maximum: 180 }
+        category_ids:
+          type: array
+          minItems: 1
+          items: { type: integer }
+    ProviderProfileUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        business_name: { type: string, maxLength: 255 }
+        description: { type: [string, 'null'] }
+        phone: { type: [string, 'null'], maxLength: 30 }
+        whatsapp: { type: [string, 'null'], maxLength: 30 }
+        email: { type: [string, 'null'], format: email, maxLength: 255 }
+        website: { type: [string, 'null'], format: uri, maxLength: 255 }
+        address: { type: [string, 'null'], maxLength: 500 }
+        city: { type: [string, 'null'], maxLength: 100 }
+        district: { type: [string, 'null'], maxLength: 100 }
+        latitude: { type: [number, 'null'], minimum: -90, maximum: 90 }
+        longitude: { type: [number, 'null'], minimum: -180, maximum: 180 }
+    ProviderCategoriesRequest:
+      type: object
+      additionalProperties: false
+      required: [category_ids]
+      properties:
+        category_ids:
+          type: array
+          items: { type: integer }
+    ProviderNotesRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        provider_notes: { type: [string, 'null'], maxLength: 2000 }
+    AdminProviderNotesRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        notes: { type: [string, 'null'], maxLength: 2000 }
+    ServiceCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [service_category_id, name]
+      properties:
+        service_category_id: { type: integer }
+        name: { type: string, maxLength: 255 }
+        description: { type: [string, 'null'] }
+        status: { type: string, enum: [draft, published, inactive], default: draft }
+    ServiceUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        service_category_id: { type: integer }
+        name: { type: string, maxLength: 255 }
+        description: { type: [string, 'null'] }
+        status: { type: string, enum: [draft, published, inactive] }
+    PackageCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [name, price]
+      properties:
+        name: { type: string, maxLength: 255 }
+        description: { type: [string, 'null'] }
+        price: { type: number, minimum: 0 }
+        duration_minutes: { type: [integer, 'null'], minimum: 1 }
+        status: { type: string, enum: [draft, published, inactive], default: draft }
+    PackageUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, maxLength: 255 }
+        description: { type: [string, 'null'] }
+        price: { type: number, minimum: 0 }
+        duration_minutes: { type: [integer, 'null'], minimum: 1 }
+        status: { type: string, enum: [draft, published, inactive] }
+    AvailabilityCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [date, status]
+      properties:
+        date: { type: string, format: date }
+        start_time: { type: [string, 'null'], pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+        end_time: { type: [string, 'null'], pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+        status: { type: string, enum: [available, unavailable, blocked, booked] }
+        notes: { type: [string, 'null'], maxLength: 1000 }
+    AvailabilityUpdateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        date: { type: string, format: date }
+        start_time: { type: [string, 'null'], pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+        end_time: { type: [string, 'null'], pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' }
+        status: { type: string, enum: [available, unavailable, blocked, booked] }
+        notes: { type: [string, 'null'], maxLength: 1000 }
+    PayHereNotification:
+      type: object
+      additionalProperties: false
+      required: [merchant_id, order_id, payment_id, payhere_amount, payhere_currency, status_code, md5sig]
+      properties:
+        merchant_id: { type: string, maxLength: 100 }
+        order_id: { type: string, maxLength: 100 }
+        payment_id: { type: string, maxLength: 100 }
+        payhere_amount: { type: string, pattern: '^[0-9]+\.[0-9]{2}$' }
+        payhere_currency: { type: string, minLength: 3, maxLength: 3 }
+        status_code: { type: string, enum: ['2', '0', '-1', '-2', '-3'] }
+        md5sig: { type: string, minLength: 32, maxLength: 32, writeOnly: true }
+        status_message: { type: [string, 'null'], maxLength: 2000 }
