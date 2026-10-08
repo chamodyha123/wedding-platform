@@ -14,11 +14,16 @@ info:
 servers:
   - url: /
     description: Application origin
+security: []
 tags:
   - name: Authentication
+    description: Public registration, login, Sanctum session management, and Google/Facebook authentication and linking.
   - name: Account security
+    description: Email verification and registration, password-reset, and password-change OTP flows.
   - name: Marketplace
+    description: Public category, provider, service, and review browsing and search.
   - name: Notifications
+    description: Sanctum-authenticated notification listing and read-state management.
   - name: Customer
     description: All customer routes require a Sanctum bearer token and customer role. Owned booking/review/payment resources are scoped to the authenticated customer.
   - name: Provider
@@ -26,6 +31,7 @@ tags:
   - name: Admin
     description: All admin routes require a Sanctum bearer token and admin role.
   - name: Payments
+    description: Customer/provider/admin payment operations and PayHere callback processing.
 paths:
   /api/auth/google/redirect:
     get:
@@ -1681,7 +1687,7 @@ components:
       content:
         application/json:
           schema:
-            oneOf:
+            anyOf:
               - { $ref: '#/components/schemas/AuthenticationResult' }
               - { $ref: '#/components/schemas/MessageResult' }
     NotificationList:
