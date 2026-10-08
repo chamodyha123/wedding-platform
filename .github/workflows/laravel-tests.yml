@@ -1,0 +1,60 @@
+name: Laravel Tests
+
+on:
+  push:
+    branches:
+      - dev-chamoth
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test Laravel application
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ENV: testing
+      APP_DEBUG: "false"
+      DB_CONNECTION: sqlite
+      DB_DATABASE: ":memory:"
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      BROADCAST_CONNECTION: "null"
+      BCRYPT_ROUNDS: "4"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: bcmath, curl, dom, fileinfo, mbstring, pdo_sqlite, sqlite3, xml
+          tools: composer:v2
+          coverage: none
+          cache: composer
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Generate application key for CI
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+
+      - name: Validate OpenAPI contract
+        run: npx --yes @redocly/cli@2.60.0 lint docs/openapi/openapi.yaml
+
+      - name: Verify Laravel routes
+        run: php artisan route:list --json
+
+      - name: Run PHPUnit suite
+        run: php vendor/bin/phpunit --do-not-cache-result
