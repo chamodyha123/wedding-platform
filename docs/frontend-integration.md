@@ -146,13 +146,11 @@ including a `data` array and page/total metadata. Public service reviews return
 `service`, `rating_summary`, and a paginated `reviews` object; review listing
 accepts `rating` (1-5) and `per_page`.
 
-### Pagination default discrepancy
+### Pagination defaults
 
-The current runtime defaults to 12 items for provider and service search and
-10 items for public service reviews. The existing OpenAPI file specifies 15
-for these defaults. This guide does not alter that contract; clients should
-pass an explicit `per_page` until the implementation and contract are
-reconciled.
+Provider and service search default to 12 items per page, and public service
+reviews default to 10. These defaults match the OpenAPI contract. Pass an
+explicit `per_page` when a different page size is needed.
 
 ## Provider services, packages, and availability
 
