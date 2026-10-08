@@ -382,14 +382,14 @@ paths:
       description: |
         Public filters: category slug, city, district, free-text search, sort
         (newest, oldest, name_asc, name_desc, rating_high, rating_low), and per_page
-        (1-100). Results are paginated; default page size is 15.
+        (1-100). Results are paginated; default page size is 12.
       parameters:
         - { name: category, in: query, schema: { type: string, maxLength: 255 } }
         - { name: city, in: query, schema: { type: string, maxLength: 255 } }
         - { name: district, in: query, schema: { type: string, maxLength: 255 } }
         - { name: search, in: query, schema: { type: string, maxLength: 255 } }
         - { name: sort, in: query, schema: { type: string, enum: [newest, oldest, name_asc, name_desc, rating_high, rating_low] } }
-        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 12 } }
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '422': { $ref: '#/components/responses/ValidationError' }
@@ -411,7 +411,7 @@ paths:
       description: |
         Public filters: category, city, district, provider, search, sort
         (newest, oldest, name_asc, name_desc, rating_high, rating_low), featured,
-        min_price, max_price, min_rating, and per_page (1-100; default 15).
+        min_price, max_price, min_rating, and per_page (1-100; default 12).
         Results are restricted to verified, active providers. max_price cannot be
         lower than min_price when both are supplied.
       parameters:
@@ -425,7 +425,7 @@ paths:
         - { name: min_price, in: query, schema: { type: number, minimum: 0 } }
         - { name: max_price, in: query, schema: { type: number, minimum: 0 } }
         - { name: min_rating, in: query, schema: { type: number, minimum: 1, maximum: 5 } }
-        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 12 } }
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '422': { $ref: '#/components/responses/ValidationError' }
@@ -437,7 +437,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Slug'
         - { name: rating, in: query, schema: { type: integer, minimum: 1, maximum: 5 } }
-        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 15 } }
+        - { name: per_page, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 10 } }
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '404': { $ref: '#/components/responses/NotFound' }
