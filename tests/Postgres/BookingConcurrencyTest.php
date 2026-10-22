@@ -148,6 +148,8 @@ class BookingConcurrencyTest extends PostgresIntegrationTestCase
 
             $deadline = microtime(true) + 5;
             while (count(glob($directory.'/*.ready') ?: []) !== count($requests)) {
+                $this->assertWorkersAreRunning($processes, $directory);
+
                 if (microtime(true) >= $deadline) {
                     $this->fail('PostgreSQL workers did not reach the controlled barrier.');
                 }
@@ -156,7 +158,7 @@ class BookingConcurrencyTest extends PostgresIntegrationTestCase
             }
 
             file_put_contents($directory.'/release', 'release');
-            $this->waitForWorkerLockContention(count($requests));
+            $this->waitForWorkerLockContention(count($requests), $processes, $directory);
             $connection->commit();
             $results = [];
 
@@ -180,11 +182,14 @@ class BookingConcurrencyTest extends PostgresIntegrationTestCase
         }
     }
 
-    private function waitForWorkerLockContention(int $expectedWorkers): void
+    /** @param array<string, Process> $processes */
+    private function waitForWorkerLockContention(int $expectedWorkers, array $processes, string $directory): void
     {
         $deadline = microtime(true) + 5;
 
         while (microtime(true) < $deadline) {
+            $this->assertWorkersAreRunning($processes, $directory);
+
             $waitingWorkers = DB::connection('pgsql')->table('pg_stat_activity')
                 ->where('datname', DB::raw('current_database()'))
                 ->where('application_name', 'like', 'wedding_marketplace_pgtest_%')
@@ -199,6 +204,24 @@ class BookingConcurrencyTest extends PostgresIntegrationTestCase
         }
 
         $this->fail('PostgreSQL workers did not contend on the expected row lock.');
+    }
+
+    /** @param array<string, Process> $processes */
+    private function assertWorkersAreRunning(array $processes, string $directory): void
+    {
+        foreach ($processes as $name => $process) {
+            if ($process->isRunning()) {
+                continue;
+            }
+
+            $resultPath = $directory.'/'.$name.'.result';
+            $result = is_file($resultPath)
+                ? json_decode(file_get_contents($resultPath), true, 512, JSON_THROW_ON_ERROR)
+                : [];
+            $error = $result['error'] ?? $process->getErrorOutput();
+
+            $this->fail("PostgreSQL worker {$name} exited before lock contention: {$error}");
+        }
     }
 
     private function statuses(array $results): array
