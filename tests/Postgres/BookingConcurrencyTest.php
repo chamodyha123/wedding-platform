@@ -139,7 +139,7 @@ class BookingConcurrencyTest extends PostgresIntegrationTestCase
             }
 
             foreach ($requests as $request) {
-                $payload = [...$request, 'worker_name' => $request['name'], 'barrier_directory' => $directory];
+                $payload = [...$request, 'worker_name' => $request['name'], 'barrier_directory' => $directory, 'payhere_settings' => $this->payHereSettings()];
                 $process = new Process([PHP_BINARY, base_path('tests/Support/PostgresHttpWorker.php'), base64_encode(json_encode($payload, JSON_THROW_ON_ERROR))]);
                 $process->setTimeout(15);
                 $process->start();

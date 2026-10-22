@@ -14,6 +14,7 @@ try {
     $app = require __DIR__.'/../../bootstrap/app.php';
     $kernel = $app->make(Kernel::class);
     $kernel->bootstrap();
+    config(['services.payhere' => $payload['payhere_settings']]);
 
     $database = (string) config('database.connections.pgsql.database');
 
