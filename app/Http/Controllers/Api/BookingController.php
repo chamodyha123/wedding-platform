@@ -756,48 +756,60 @@ class BookingController extends Controller
             ], 403);
         }
 
-        $booking = $provider->bookings()
-            ->where('id', $id)
-            ->first();
+        $booking = DB::transaction(function () use ($provider, $id) {
+            $booking = Booking::query()
+                ->whereKey($id)
+                ->where('service_provider_id', $provider->id)
+                ->lockForUpdate()
+                ->first();
 
-        if (! $booking) {
-            return response()->json([
-                'message' => 'Booking not found.',
-            ], 404);
+            if (! $booking) {
+                return response()->json([
+                    'message' => 'Booking not found.',
+                ], 404);
+            }
+
+            if ($booking->booking_status !== 'confirmed') {
+                return response()->json([
+                    'message' => 'Only confirmed bookings can be completed.',
+                ], 422);
+            }
+
+            if ($booking->event_date->isFuture()) {
+                return response()->json([
+                    'message' => 'A booking cannot be completed before its event date.',
+                ], 422);
+            }
+
+            $booking->booking_status = 'completed';
+            $booking->completed_at = now();
+            $booking->save();
+
+            $booking->loadMissing([
+                'customer:id,name,email',
+                'service:id,name',
+            ]);
+
+            /*
+             * This database notification is written in the same transaction
+             * as the completion transition. A notification-write failure
+             * therefore rolls back the completed state as well.
+             */
+            $booking->customer->notify(
+                new BookingCompletedNotification(
+                    bookingId: $booking->id,
+                    bookingReference: $booking->booking_reference,
+                    serviceName: $booking->service->name,
+                    completedAt: $booking->completed_at->toISOString(),
+                )
+            );
+
+            return $booking;
+        });
+
+        if ($booking instanceof JsonResponse) {
+            return $booking;
         }
-
-        if ($booking->booking_status !== 'confirmed') {
-            return response()->json([
-                'message' => 'Only confirmed bookings can be completed.',
-            ], 422);
-        }
-
-        if ($booking->event_date->isFuture()) {
-            return response()->json([
-                'message' => 'A booking cannot be completed before its event date.',
-            ], 422);
-        }
-
-        $booking->booking_status = 'completed';
-        $booking->completed_at = now();
-        $booking->save();
-
-        /*
-         * Notify customer after successful completion.
-         */
-        $booking->loadMissing([
-            'customer:id,name,email',
-            'service:id,name',
-        ]);
-
-        $booking->customer->notify(
-            new BookingCompletedNotification(
-                bookingId: $booking->id,
-                bookingReference: $booking->booking_reference,
-                serviceName: $booking->service->name,
-                completedAt: $booking->completed_at->toISOString(),
-            )
-        );
 
         return response()->json([
             'message' => 'Booking completed successfully.',

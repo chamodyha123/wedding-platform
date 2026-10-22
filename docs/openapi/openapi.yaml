@@ -568,9 +568,9 @@ paths:
       tags: [Customer]
       summary: Create a booking
       description: |
-        Customer-only. The selected service must be published and its provider verified and
-        active. A successful booking starts in pending state. Event date must be today or
-        later, and end_time must follow start_time.
+        Customer-only and requires a verified email address. The selected service must be
+        published and its provider verified and active. A successful booking starts in pending
+        state. Event date must be today or later, and end_time must follow start_time.
       security:
         - sanctumBearer: []
       requestBody:
@@ -624,7 +624,7 @@ paths:
       operationId: createBookingReview
       tags: [Customer]
       summary: Review a completed booking
-      description: Customer-only; booking ownership is checked, only completed bookings can be reviewed, and a booking can have only one review.
+      description: Customer-only and requires a verified email address; booking ownership is checked, only completed bookings can be reviewed, and a booking can have only one review.
       security:
         - sanctumBearer: []
       parameters:
@@ -637,6 +637,7 @@ paths:
       responses:
         '201': { $ref: '#/components/responses/Created' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
@@ -667,7 +668,7 @@ paths:
       operationId: updateCustomerReview
       tags: [Customer]
       summary: Update an owned review
-      description: At least one of rating or comment must be provided.
+      description: Requires a verified email address. At least one of rating or comment must be provided.
       security:
         - sanctumBearer: []
       parameters:
@@ -680,6 +681,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/ValidationError' }
     delete:
@@ -693,6 +695,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
   /api/customer/payments:
     get:
@@ -723,10 +726,10 @@ paths:
       tags: [Payments]
       summary: Start a payment attempt for an owned booking
       description: |
-        Customer-only. Only accepted, unpaid bookings are eligible and only one active
-        pending/processing attempt is allowed. `card` starts PayHere checkout and returns
-        checkout details; `bank_transfer` does not. PayHere configuration and a customer
-        profile are required for card checkout.
+        Customer-only and requires a verified email address. Only accepted, unpaid bookings
+        are eligible and only one active pending/processing attempt is allowed. `card` starts
+        PayHere checkout and returns checkout details; `bank_transfer` does not. PayHere
+        configuration and a customer profile are required for card checkout.
       security:
         - sanctumBearer: []
       parameters:
@@ -749,7 +752,7 @@ paths:
       operationId: confirmMockPaymentSuccess
       tags: [Payments]
       summary: Mark a payment successful in local/testing
-      description: Development/mock endpoint. Returns 404 outside local and testing; production success is confirmed only by the verified PayHere callback or reconciliation.
+      description: Development/mock endpoint requiring a verified email address. Returns 404 outside local and testing; production success is confirmed only by the verified PayHere callback or reconciliation.
       security:
         - sanctumBearer: []
       parameters:
@@ -758,6 +761,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
@@ -766,7 +770,7 @@ paths:
       operationId: markMockPaymentFailed
       tags: [Payments]
       summary: Mark a payment failed in local/testing
-      description: Development/mock endpoint. Returns 404 outside local and testing; an active payment on an accepted booking is required.
+      description: Development/mock endpoint requiring a verified email address. Returns 404 outside local and testing; an active payment on an accepted booking is required.
       security:
         - sanctumBearer: []
       parameters:
@@ -779,6 +783,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
@@ -787,7 +792,7 @@ paths:
       operationId: cancelMockPayment
       tags: [Payments]
       summary: Cancel a payment attempt in local/testing
-      description: Development/mock endpoint. Returns 404 outside local and testing.
+      description: Development/mock endpoint requiring a verified email address. Returns 404 outside local and testing.
       security:
         - sanctumBearer: []
       parameters:
@@ -796,6 +801,7 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/Success' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
   /api/provider/profile:
@@ -971,7 +977,7 @@ paths:
       operationId: acceptProviderBooking
       tags: [Provider]
       summary: Accept a pending booking
-      description: Requires an active, verified provider account; only pending bookings can be accepted. `provider_notes` is optional.
+      description: Requires a verified email address plus an active, verified provider account; only pending bookings can be accepted. `provider_notes` is optional.
       security:
         - sanctumBearer: []
       parameters:
@@ -991,7 +997,7 @@ paths:
       operationId: rejectProviderBooking
       tags: [Provider]
       summary: Reject a pending booking
-      description: Requires an active, verified provider account; only pending bookings can be rejected. `provider_notes` is optional.
+      description: Requires a verified email address plus an active, verified provider account; only pending bookings can be rejected. `provider_notes` is optional.
       security:
         - sanctumBearer: []
       parameters:
@@ -1011,7 +1017,7 @@ paths:
       operationId: completeProviderBooking
       tags: [Provider]
       summary: Complete a confirmed booking
-      description: Requires an active, verified provider account; only confirmed bookings whose event date has arrived can be completed.
+      description: Requires a verified email address plus an active, verified provider account; only confirmed bookings whose event date has arrived can be completed.
       security:
         - sanctumBearer: []
       parameters:
@@ -1037,7 +1043,7 @@ paths:
       operationId: createProviderService
       tags: [Provider]
       summary: Create a provider service
-      description: Requires an active, verified provider; category must be assigned to that provider. Default status is draft.
+      description: Requires a verified email address plus an active, verified provider; category must be assigned to that provider. Default status is draft.
       security:
         - sanctumBearer: []
       requestBody:
@@ -1068,6 +1074,7 @@ paths:
       operationId: updateProviderService
       tags: [Provider]
       summary: Update a service owned by the authenticated provider
+      description: Requires a verified email address plus an active, verified provider account.
       security:
         - sanctumBearer: []
       parameters:
@@ -1087,6 +1094,7 @@ paths:
       operationId: deleteProviderService
       tags: [Provider]
       summary: Delete a service owned by the authenticated provider
+      description: Requires a verified email address plus an active, verified provider account.
       security:
         - sanctumBearer: []
       parameters:
@@ -1114,7 +1122,7 @@ paths:
       operationId: createServicePackage
       tags: [Provider]
       summary: Create a package for a provider-owned service
-      description: Requires an active, verified provider; default package status is draft.
+      description: Requires a verified email address plus an active, verified provider; default package status is draft.
       security:
         - sanctumBearer: []
       parameters:
@@ -1149,6 +1157,7 @@ paths:
       operationId: updateServicePackage
       tags: [Provider]
       summary: Update a package of a provider-owned service
+      description: Requires a verified email address plus an active, verified provider account.
       security:
         - sanctumBearer: []
       parameters:
@@ -1169,6 +1178,7 @@ paths:
       operationId: deleteServicePackage
       tags: [Provider]
       summary: Delete a package of a provider-owned service
+      description: Requires a verified email address plus an active, verified provider account.
       security:
         - sanctumBearer: []
       parameters:
@@ -1197,7 +1207,7 @@ paths:
       operationId: createServiceAvailability
       tags: [Provider]
       summary: Create an availability slot
-      description: Requires an active, verified provider. Dates must be today or later; start/end times use 24-hour HH:mm format.
+      description: Requires a verified email address plus an active, verified provider. Dates must be today or later; start/end times use 24-hour HH:mm format.
       security:
         - sanctumBearer: []
       parameters:
@@ -1218,6 +1228,7 @@ paths:
       operationId: updateServiceAvailability
       tags: [Provider]
       summary: Update an availability slot
+      description: Requires a verified email address plus an active, verified provider account.
       security:
         - sanctumBearer: []
       parameters:
@@ -1238,6 +1249,7 @@ paths:
       operationId: deleteServiceAvailability
       tags: [Provider]
       summary: Delete an availability slot
+      description: Requires a verified email address plus an active, verified provider account.
       security:
         - sanctumBearer: []
       parameters:

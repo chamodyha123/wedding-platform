@@ -5,10 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Service;
 use App\Models\ServiceAvailability;
+use App\Models\ServiceProvider;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use App\Models\ServiceProvider;
 
 class ServiceAvailabilityController extends Controller
 {
@@ -648,30 +648,66 @@ class ServiceAvailabilityController extends Controller
             ], 403);
         }
 
-        $service = $provider->services()
-            ->where('id', $serviceId)
-            ->first();
+        $availability = DB::transaction(function () use (
+            $provider,
+            $serviceId,
+            $availabilityId
+        ) {
+            $lockedProvider = ServiceProvider::query()
+                ->whereKey($provider->id)
+                ->lockForUpdate()
+                ->first();
 
-        if (! $service) {
-            return response()->json([
-                'message' => 'Service not found.',
-            ], 404);
+            if (! $lockedProvider) {
+                return response()->json([
+                    'message' => 'Business profile not found. Please create your business profile first.',
+                ], 404);
+            }
+
+            if (! $lockedProvider->is_active) {
+                return response()->json([
+                    'message' => 'Your provider account is inactive and cannot manage availability.',
+                ], 403);
+            }
+
+            if ($lockedProvider->verification_status !== 'verified') {
+                return response()->json([
+                    'message' => 'Your business must be verified before you can delete service availability.',
+                ], 403);
+            }
+
+            $service = Service::query()
+                ->whereKey($serviceId)
+                ->where('service_provider_id', $lockedProvider->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $service) {
+                return response()->json([
+                    'message' => 'Service not found.',
+                ], 404);
+            }
+
+            $availability = ServiceAvailability::query()
+                ->whereKey($availabilityId)
+                ->where('service_id', $service->id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $availability) {
+                return response()->json([
+                    'message' => 'Service availability record not found.',
+                ], 404);
+            }
+
+            $availability->delete();
+
+            return $availability;
+        });
+
+        if ($availability instanceof JsonResponse) {
+            return $availability;
         }
-
-        $availability = $service->availabilities()
-            ->where(
-                'id',
-                $availabilityId
-            )
-            ->first();
-
-        if (! $availability) {
-            return response()->json([
-                'message' => 'Service availability record not found.',
-            ], 404);
-        }
-
-        $availability->delete();
 
         return response()->json([
             'message' => 'Service availability deleted successfully.',

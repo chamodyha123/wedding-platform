@@ -267,7 +267,7 @@ Route::middleware([
         Route::post('/bookings', [
             BookingController::class,
             'store',
-        ]);
+        ])->middleware('verified');
 
         Route::get('/bookings/{id}', [
             BookingController::class,
@@ -288,7 +288,7 @@ Route::middleware([
         Route::post('/bookings/{bookingId}/reviews', [
             ReviewController::class,
             'store',
-        ]);
+        ])->middleware('verified');
 
         Route::get('/reviews', [
             ReviewController::class,
@@ -303,12 +303,12 @@ Route::middleware([
         Route::put('/reviews/{id}', [
             ReviewController::class,
             'update',
-        ]);
+        ])->middleware('verified');
 
         Route::delete('/reviews/{id}', [
             ReviewController::class,
             'destroy',
-        ]);
+        ])->middleware('verified');
 
         /*
         |--------------------------------------------------------------------------
@@ -329,7 +329,7 @@ Route::middleware([
         Route::post('/bookings/{bookingId}/payments', [
             PaymentController::class,
             'store',
-        ]);
+        ])->middleware('verified');
 
         Route::post(
             '/bookings/{bookingId}/payments/{paymentId}/success',
@@ -337,7 +337,7 @@ Route::middleware([
                 PaymentController::class,
                 'success',
             ]
-        );
+        )->middleware('verified');
 
         Route::post(
             '/bookings/{bookingId}/payments/{paymentId}/fail',
@@ -345,7 +345,7 @@ Route::middleware([
                 PaymentController::class,
                 'fail',
             ]
-        );
+        )->middleware('verified');
 
         Route::post(
             '/bookings/{bookingId}/payments/{paymentId}/cancel',
@@ -353,7 +353,7 @@ Route::middleware([
                 PaymentController::class,
                 'cancel',
             ]
-        );
+        )->middleware('verified');
     });
 
 /*
@@ -468,17 +468,17 @@ Route::middleware([
         Route::post('/bookings/{id}/accept', [
             BookingController::class,
             'accept',
-        ]);
+        ])->middleware('verified');
 
         Route::post('/bookings/{id}/reject', [
             BookingController::class,
             'reject',
-        ]);
+        ])->middleware('verified');
 
         Route::post('/bookings/{id}/complete', [
             BookingController::class,
             'complete',
-        ]);
+        ])->middleware('verified');
 
         /*
         |--------------------------------------------------------------------------
@@ -499,17 +499,17 @@ Route::middleware([
         Route::post('/services', [
             ServiceController::class,
             'store',
-        ]);
+        ])->middleware('verified');
 
         Route::put('/services/{id}', [
             ServiceController::class,
             'update',
-        ]);
+        ])->middleware('verified');
 
         Route::delete('/services/{id}', [
             ServiceController::class,
             'destroy',
-        ]);
+        ])->middleware('verified');
 
         /*
         |--------------------------------------------------------------------------
@@ -525,7 +525,7 @@ Route::middleware([
         Route::post('/services/{serviceId}/packages', [
             ServicePackageController::class,
             'store',
-        ]);
+        ])->middleware('verified');
 
         Route::get(
             '/services/{serviceId}/packages/{packageId}',
@@ -541,7 +541,7 @@ Route::middleware([
                 ServicePackageController::class,
                 'update',
             ]
-        );
+        )->middleware('verified');
 
         Route::delete(
             '/services/{serviceId}/packages/{packageId}',
@@ -549,7 +549,7 @@ Route::middleware([
                 ServicePackageController::class,
                 'destroy',
             ]
-        );
+        )->middleware('verified');
 
         /*
         |--------------------------------------------------------------------------
@@ -571,7 +571,7 @@ Route::middleware([
                 ServiceAvailabilityController::class,
                 'store',
             ]
-        );
+        )->middleware('verified');
 
         Route::put(
             '/services/{serviceId}/availability/{availabilityId}',
@@ -579,7 +579,7 @@ Route::middleware([
                 ServiceAvailabilityController::class,
                 'update',
             ]
-        );
+        )->middleware('verified');
 
         Route::delete(
             '/services/{serviceId}/availability/{availabilityId}',
@@ -587,7 +587,7 @@ Route::middleware([
                 ServiceAvailabilityController::class,
                 'destroy',
             ]
-        );
+        )->middleware('verified');
     });
 
 /*
