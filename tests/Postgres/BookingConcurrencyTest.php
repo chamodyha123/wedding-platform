@@ -218,7 +218,16 @@ class BookingConcurrencyTest extends PostgresIntegrationTestCase
             $result = is_file($resultPath)
                 ? json_decode(file_get_contents($resultPath), true, 512, JSON_THROW_ON_ERROR)
                 : [];
-            $error = $result['error'] ?? $process->getErrorOutput();
+            $error = $result['error']
+                ?? sprintf(
+                    'HTTP %s: %s',
+                    $result['status'] ?? 'no response',
+                    json_encode($result['body'] ?? [], JSON_THROW_ON_ERROR)
+                );
+
+            if ($error === 'HTTP no response: []') {
+                $error = $process->getErrorOutput();
+            }
 
             $this->fail("PostgreSQL worker {$name} exited before lock contention: {$error}");
         }
