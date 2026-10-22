@@ -57,3 +57,62 @@ jobs:
 
       - name: Run PHPUnit suite
         run: php vendor/bin/phpunit --do-not-cache-result
+
+  postgres:
+    name: Test PostgreSQL concurrency integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: wedding_marketplace_test_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d wedding_marketplace_test_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      APP_ENV: testing
+      APP_DEBUG: "false"
+      RUN_POSTGRES_TESTS: "1"
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: wedding_marketplace_test_ci
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      POSTGRES_TEST_DATABASE: wedding_marketplace_test_ci
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      SESSION_DRIVER: array
+      MAIL_MAILER: array
+      BROADCAST_CONNECTION: "null"
+      BCRYPT_ROUNDS: "4"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: bcmath, curl, dom, fileinfo, mbstring, pdo_pgsql, pgsql, xml
+          tools: composer:v2
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Generate application key for CI
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+
+      - name: Run PostgreSQL integration tests
+        run: php vendor/bin/phpunit --configuration phpunit.postgres.xml --do-not-cache-result
