@@ -60,7 +60,6 @@ jobs:
 
   postgres:
     name: Test PostgreSQL concurrency integration
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
@@ -69,7 +68,7 @@ jobs:
         env:
           POSTGRES_DB: wedding_marketplace_test_ci
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_TEST_PASSWORD || github.run_id }}
+          POSTGRES_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
         ports:
           - 5432:5432
         options: >-
@@ -86,7 +85,7 @@ jobs:
       DB_PORT: 5432
       DB_DATABASE: wedding_marketplace_test_ci
       DB_USERNAME: postgres
-      DB_PASSWORD: ${{ secrets.POSTGRES_TEST_PASSWORD || github.run_id }}
+      DB_PASSWORD: ${{ github.run_id }}-${{ github.run_attempt }}
       POSTGRES_TEST_DATABASE: wedding_marketplace_test_ci
       CACHE_STORE: array
       QUEUE_CONNECTION: sync
@@ -114,15 +113,6 @@ jobs:
         run: |
           cp .env.example .env
           php artisan key:generate --force
-
-      - name: Verify PostgreSQL test credential
-        env:
-          POSTGRES_TEST_PASSWORD: ${{ secrets.POSTGRES_TEST_PASSWORD }}
-        run: |
-          if [ -z "$POSTGRES_TEST_PASSWORD" ]; then
-            echo "::error::Repository secret POSTGRES_TEST_PASSWORD is required for PostgreSQL concurrency tests."
-            exit 1
-          fi
 
       - name: Run PostgreSQL integration tests
         run: php vendor/bin/phpunit --configuration phpunit.postgres.xml --do-not-cache-result
