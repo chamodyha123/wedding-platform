@@ -10,24 +10,11 @@ $payload = json_decode(base64_decode($argv[1] ?? '', true), true, 512, JSON_THRO
 $barrierDirectory = $payload['barrier_directory'];
 $workerName = $payload['worker_name'];
 
-file_put_contents($barrierDirectory.'/'.$workerName.'.ready', 'ready');
-
-$deadline = microtime(true) + 10;
-
-while (! file_exists($barrierDirectory.'/release')) {
-    if (microtime(true) >= $deadline) {
-        file_put_contents($barrierDirectory.'/'.$workerName.'.result', json_encode([
-            'error' => 'Timed out waiting for the concurrency barrier.',
-        ], JSON_THROW_ON_ERROR));
-
-        exit(1);
-    }
-
-    usleep(10_000);
-}
-
 try {
     $app = require __DIR__.'/../../bootstrap/app.php';
+    $kernel = $app->make(Kernel::class);
+    $kernel->bootstrap();
+    config(['services.payhere' => $payload['payhere_settings']]);
 
     $database = (string) config('database.connections.pgsql.database');
 
@@ -46,9 +33,20 @@ try {
         throw new RuntimeException('Worker refused a non-isolated PostgreSQL connection.');
     }
 
-    DB::statement("set application_name = 'wedding_marketplace_pgtest_{$workerName}'");
+    DB::connection('pgsql')->statement("set application_name = 'wedding_marketplace_pgtest_{$workerName}'");
 
-    $kernel = $app->make(Kernel::class);
+    file_put_contents($barrierDirectory.'/'.$workerName.'.ready', 'ready');
+
+    $deadline = microtime(true) + 10;
+
+    while (! file_exists($barrierDirectory.'/release')) {
+        if (microtime(true) >= $deadline) {
+            throw new RuntimeException('Timed out waiting for the concurrency barrier.');
+        }
+
+        usleep(10_000);
+    }
+
     $request = Request::create(
         $payload['uri'],
         $payload['method'],

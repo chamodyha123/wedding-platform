@@ -35,27 +35,21 @@ abstract class PostgresIntegrationTestCase extends TestCase
             Role::create(['name' => $role, 'guard_name' => 'web']);
         }
 
-        config([
-            'services.payhere.mode' => 'sandbox',
-            'services.payhere.merchant_id' => 'postgres-test-merchant',
-            'services.payhere.merchant_secret' => 'postgres-test-secret',
-            'services.payhere.return_url' => 'https://example.test/return',
-            'services.payhere.cancel_url' => 'https://example.test/cancel',
-            'services.payhere.notify_url' => 'https://example.test/notify',
-            'services.payhere.currency' => 'LKR',
-        ]);
+        config(['services.payhere' => $this->payHereSettings()]);
+    }
 
-        foreach ([
-            'PAYHERE_MODE=sandbox',
-            'PAYHERE_MERCHANT_ID=postgres-test-merchant',
-            'PAYHERE_MERCHANT_SECRET=postgres-test-secret',
-            'PAYHERE_RETURN_URL=https://example.test/return',
-            'PAYHERE_CANCEL_URL=https://example.test/cancel',
-            'PAYHERE_NOTIFY_URL=https://example.test/notify',
-            'PAYHERE_CURRENCY=LKR',
-        ] as $setting) {
-            putenv($setting);
-        }
+    /** @return array{mode: string, merchant_id: string, merchant_secret: string, return_url: string, cancel_url: string, notify_url: string, currency: string} */
+    protected function payHereSettings(): array
+    {
+        return [
+            'mode' => 'sandbox',
+            'merchant_id' => 'postgres-test-merchant',
+            'merchant_secret' => 'postgres-test-secret',
+            'return_url' => 'https://example.test/return',
+            'cancel_url' => 'https://example.test/cancel',
+            'notify_url' => 'https://example.test/notify',
+            'currency' => 'LKR',
+        ];
     }
 
     protected function assertIsolatedPostgresDatabase(): void
