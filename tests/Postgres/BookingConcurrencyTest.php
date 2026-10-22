@@ -77,7 +77,7 @@ class BookingConcurrencyTest extends PostgresIntegrationTestCase
         $fixture = $this->marketplaceFixture('callback-race');
         $booking = $this->booking($fixture, 'accepted', 'pending');
         $payment = Payment::create(['booking_id' => $booking->id, 'customer_id' => $fixture['customer']->id, 'payment_reference' => 'PAY-callback-race', 'amount' => 100, 'currency' => 'LKR', 'status' => 'pending', 'gateway' => 'payhere']);
-        $body = $this->callback($payment->payment_reference, 'PAYHERE-callback-race');
+        $body = $this->buildPayHereCallbackPayload($payment->payment_reference, 'PAYHERE-callback-race');
         $results = $this->runWorkers([$this->request('one', '/api/payments/payhere/notify', '', $body), $this->request('two', '/api/payments/payhere/notify', '', $body)], bookingId: $booking->id);
 
         $this->assertSame([200, 200], $this->statuses($results));
@@ -92,7 +92,7 @@ class BookingConcurrencyTest extends PostgresIntegrationTestCase
         $booking = $this->booking($fixture, 'accepted', 'pending');
         $payment = Payment::create(['booking_id' => $booking->id, 'customer_id' => $fixture['customer']->id, 'payment_reference' => 'PAY-cancel-race', 'amount' => 100, 'currency' => 'LKR', 'status' => 'pending', 'gateway' => 'payhere']);
         $results = $this->runWorkers([
-            $this->request('callback', '/api/payments/payhere/notify', '', $this->callback($payment->payment_reference, 'PAYHERE-cancel-race')),
+            $this->request('callback', '/api/payments/payhere/notify', '', $this->buildPayHereCallbackPayload($payment->payment_reference, 'PAYHERE-cancel-race')),
             $this->request('cancel', '/api/customer/bookings/'.$booking->id.'/cancel', $fixture['customer']->createToken('cancel')->plainTextToken, ['cancellation_reason' => 'Changed plans.']),
         ], bookingId: $booking->id);
 
@@ -106,7 +106,7 @@ class BookingConcurrencyTest extends PostgresIntegrationTestCase
         return Booking::create(['booking_reference' => 'BK-'.Str::uuid(), 'customer_id' => $fixture['customer']->id, 'service_provider_id' => $fixture['provider']->id, 'service_id' => $fixture['service']->id, 'service_package_id' => $fixture['package']->id, 'event_date' => $date ?? now()->addDays(3)->toDateString(), 'start_time' => '10:00', 'end_time' => '11:00', 'total_amount' => 100, 'booking_status' => $status, 'payment_status' => $paymentStatus]);
     }
 
-    private function callback(string $orderId, string $paymentId): array
+    private function buildPayHereCallbackPayload(string $orderId, string $paymentId): array
     {
         $amount = '100.00';
         $signature = strtoupper(md5('postgres-test-merchant'.$orderId.$amount.'LKR2'.strtoupper(md5('postgres-test-secret'))));
